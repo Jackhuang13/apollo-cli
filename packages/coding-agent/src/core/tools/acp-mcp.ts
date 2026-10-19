@@ -6,6 +6,8 @@ import type { IpythonKernelProvisioner } from "./ipython.js";
 // 48 keeps `mcp_list_tools_<name>` within providers' 64-char tool-name limits.
 const ACP_MCP_SERVER_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,48}$/;
 
+type Interpreter = "script" | "python";
+
 export function acpMcpToolNames(servers: readonly AcpMcpServerConfig[]): string[] {
 	const names: string[] = [];
 	const seenServers = new Set<string>();
@@ -20,6 +22,35 @@ export function acpMcpToolNames(servers: readonly AcpMcpServerConfig[]): string[
 		names.push(`mcp_list_tools_${server.name}`, `mcp_call_${server.name}`);
 	}
 	return names;
+}
+
+/**
+ * Build the kernel code that lists a server's tools. The TS kernel returns the
+ * last expression as the result, so it emits a `JSON.stringify(...)` expression;
+ * the Python kernel captures stdout, so it `print`s the serialized tools.
+ */
+export function acpMcpListToolsCode(serverName: string, interpreter: Interpreter): string {
+	const quoted = JSON.stringify(serverName);
+	if (interpreter === "script") {
+		return `JSON.stringify(await mcp.list_tools(${quoted}))`;
+	}
+	return `print(__import__("json").dumps(await mcp.list_tools(${quoted}), default=str))`;
+}
+
+/** Build the kernel code that calls one tool on a server, per kernel dialect. */
+export function acpMcpCallToolCode(
+	serverName: string,
+	tool: string,
+	args: Record<string, unknown>,
+	interpreter: Interpreter,
+): string {
+	const quoted = JSON.stringify(serverName);
+	const toolQuoted = JSON.stringify(tool);
+	const argsJson = JSON.stringify(args ?? {});
+	if (interpreter === "script") {
+		return `JSON.stringify(await mcp.call_tool(${quoted}, ${toolQuoted}, ${argsJson}))`;
+	}
+	return `print(__import__("json").dumps(await mcp.call_tool(${quoted}, ${toolQuoted}, __import__("json").loads(${JSON.stringify(argsJson)})), default=str))`;
 }
 
 function executionResult(result: ExecuteResult) {
@@ -42,9 +73,13 @@ function executionResult(result: ExecuteResult) {
 	};
 }
 
-async function executeMcpCode(provisioner: IpythonKernelProvisioner, code: string, signal: AbortSignal | undefined) {
+async function executeMcpCode(
+	provisioner: IpythonKernelProvisioner,
+	buildCode: (interpreter: Interpreter) => string,
+	signal: AbortSignal | undefined,
+) {
 	const manager = await provisioner.ensure(() => {}, signal);
-	return executionResult(await manager.execute(code, { signal }));
+	return executionResult(await manager.execute(buildCode(manager.interpreter), { signal }));
 }
 
 export function createAcpMcpToolDefinitions(
@@ -56,7 +91,6 @@ export function createAcpMcpToolDefinitions(
 	for (const [index, server] of servers.entries()) {
 		const listToolName = names[index * 2]!;
 		const callToolName = names[index * 2 + 1]!;
-		const serverName = JSON.stringify(server.name);
 
 		definitions.push({
 			name: listToolName,
@@ -66,8 +100,7 @@ export function createAcpMcpToolDefinitions(
 				`Call this first, then use ${callToolName} to invoke a specific tool.`,
 			parameters: { type: "object", properties: {}, required: [], additionalProperties: false },
 			execute: async (_toolCallId, _params, signal, _onUpdate, _ctx) => {
-				const code = `print(__import__("json").dumps(await mcp.list_tools(${serverName}), default=str))`;
-				return executeMcpCode(provisioner, code, signal);
+				return executeMcpCode(provisioner, (interpreter) => acpMcpListToolsCode(server.name, interpreter), signal);
 			},
 		});
 
@@ -88,10 +121,11 @@ export function createAcpMcpToolDefinitions(
 			},
 			execute: async (_toolCallId, params, signal, _onUpdate, _ctx) => {
 				const { tool, arguments: args } = params as { tool: string; arguments: Record<string, unknown> };
-				const code =
-					`print(__import__("json").dumps(await mcp.call_tool(${serverName}, ${JSON.stringify(tool)}, ` +
-					`__import__("json").loads(${JSON.stringify(JSON.stringify(args ?? {}))})), default=str))`;
-				return executeMcpCode(provisioner, code, signal);
+				return executeMcpCode(
+					provisioner,
+					(interpreter) => acpMcpCallToolCode(server.name, tool, args ?? {}, interpreter),
+					signal,
+				);
 			},
 		});
 	}

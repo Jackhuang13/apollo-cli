@@ -14,6 +14,7 @@ import {
 import { createIpythonToolDefinition, IpythonKernelProvisioner } from "../src/core/tools/ipython.js";
 
 let tempDir = "";
+let originalCwd = "";
 
 function writeFakePython(opts: { sleepSeconds?: number } = {}): { python: string; countRuns: () => number } {
 	const python = join(tempDir, "python");
@@ -119,9 +120,15 @@ input.on("line", (line) => {
 describe("IpythonKernelProvisioner", () => {
 	beforeEach(() => {
 		tempDir = mkdtempSync(join(tmpdir(), "prime-agent-provisioner-"));
+		originalCwd = process.cwd();
+		process.chdir(tempDir);
 	});
 
 	afterEach(() => {
+		if (originalCwd) {
+			process.chdir(originalCwd);
+			originalCwd = "";
+		}
 		if (tempDir) {
 			rmSync(tempDir, { recursive: true, force: true });
 			tempDir = "";
@@ -253,7 +260,7 @@ describe("IpythonKernelProvisioner", () => {
 
 		const started = provisioner.ensure(undefined, controller.signal);
 		controller.abort();
-		await expect(started).rejects.toThrow("Python execution aborted");
+		await expect(started).rejects.toThrow("IScript execution aborted");
 		release();
 		await new Promise((r) => setTimeout(r, 50));
 
@@ -301,7 +308,7 @@ describe("IpythonKernelProvisioner", () => {
 		const controller = new AbortController();
 		controller.abort();
 
-		await expect(provisioner.ensure(undefined, controller.signal)).rejects.toThrow("Python execution aborted");
+		await expect(provisioner.ensure(undefined, controller.signal)).rejects.toThrow("IScript execution aborted");
 		expect(dispose).not.toHaveBeenCalled();
 		expect(provisioner.manager).toBe(manager);
 	});
@@ -423,7 +430,7 @@ describe("IpythonKernelProvisioner", () => {
 
 		expect(result.details.status).toBe("ok");
 		expect(result.details.kernelRestarted).toBe(true);
-		expect(text).toContain("<ipython_kernel_reset>");
+		expect(text).toContain("<iscript_kernel_reset>");
 		expect(text).toContain("Variables, imports, async tasks, and open resources");
 		expect(text).toContain("ok");
 		expect(ensure).toHaveBeenCalledTimes(2);
@@ -453,9 +460,15 @@ describe("IpythonKernelProvisioner", () => {
 describe("ReplKernelManager session cleanup during startup", () => {
 	beforeEach(() => {
 		tempDir = mkdtempSync(join(tmpdir(), "prime-agent-kernel-cleanup-"));
+		originalCwd = process.cwd();
+		process.chdir(tempDir);
 	});
 
 	afterEach(() => {
+		if (originalCwd) {
+			process.chdir(originalCwd);
+			originalCwd = "";
+		}
 		if (tempDir) {
 			rmSync(tempDir, { recursive: true, force: true });
 			tempDir = "";

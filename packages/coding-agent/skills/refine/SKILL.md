@@ -1,43 +1,38 @@
 ---
 name: refine
-description: Self-evolving harness workflow for inspecting and updating durable rules, skills, preferences, and workflow prompts via `harness` or `import { refine } from "refine"`.
+description: Schedule and inspect continual harness refinement from the TypeScript REPL (`import refine, { run, status } from "refine"`), plus thin wrappers over the real `harness` CRUD methods.
 ---
 
-# `refine` — Self-Evolving Harness Workflow
+# `refine` — Continual Harness Refinement
 
-Evolve durable rules, skills, preferences, and workflow prompts based on concrete session evidence.
+Schedule a harness refinement (applied at the turn boundary) and inspect or edit durable harness entries.
 
-## Quick Access in the TypeScript REPL
-
-`harness` is pre-loaded in the REPL global scope (or import `refine` via `import { refine } from "refine"`):
+## Import
 
 ```ts
-// 1. Inspect existing harness state
-harness.overview();
-harness.search("verification");
-
-// 2. Create or update a durable rule or skill
-harness.upsert_rule(
-  "test-before-commit",
-  "Always run the targeted test file before committing changes.",
-  "Enforce targeted test verification",
-  "project",
-);
-
-// 3. Record the refinement audit event
-harness.record_refinement(
-  "Missed running targeted test before reporting completion",
-  ["rule:project:test-before-commit"],
-  "project",
-  "Cell 4 required a follow-up fix",
-);
+import refine, { run, status } from "refine";
 ```
 
-## Available Methods on `harness` / `refine`
+## Schedule Refinement
 
-- `overview()` / `snapshot()` / `search(query, limit?)`
-- `list_rules(scope?)` / `get_rule(name, scope?)` / `upsert_rule(name, content, description?, scope?)` / `delete_rule(name, scope?)`
-- `list_skills(scope?)` / `get_skill(name, scope?)` / `upsert_skill(name, content, description?, scope?)` / `delete_skill(name, scope?)`
-- `get_preferences(scope?)` / `update_preferences(patch, scope?)`
-- `get_workflow_prompts(scope?)` / `update_workflow_prompt(key, value, scope?)`
-- `record_refinement(reason, changes, scope?, evidence?)`
+```ts
+await run("Record the retry policy as a memory", /* global_ */ false);
+await run("Always verify with the project's own interpreter", /* global_ */ true);
+const s = await status(); // { pending, in_flight }
+```
+
+## Harness Access
+
+`harness` is pre-loaded on `globalThis`; `refine` also exposes thin wrappers over the real `HarnessState` methods. Scope is `local` (session) by default; pass `{ global_: true }` for the cross-session store.
+
+```ts
+harness.overview();
+harness.search("verification");
+refine.create_memory("title", "content", { global_: true });
+refine.update_memory(id, "title", "content");
+refine.delete_memory(id);
+refine.create_prompt_note("title", "content");
+refine.create_skill("title", "content", { reference: {}, arguments: {} });
+refine.create_subagent("title", "content");
+refine.record_refinement("why", ["memory:global:..."], { global_: true });
+```

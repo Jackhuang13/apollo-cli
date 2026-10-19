@@ -20,10 +20,10 @@ export interface CodeContextOptions {
 }
 
 function _getMcp(): {
-	call_tool: (toolName: string, args?: Record<string, unknown>, server?: string) => Promise<unknown>;
+	call_tool: (server: string, tool: string, args?: Record<string, unknown>) => Promise<unknown>;
 } {
 	const g = globalThis as {
-		mcp?: { call_tool: (toolName: string, args?: Record<string, unknown>, server?: string) => Promise<unknown> };
+		mcp?: { call_tool: (server: string, tool: string, args?: Record<string, unknown>) => Promise<unknown> };
 	};
 	if (!g.mcp || typeof g.mcp.call_tool !== "function") {
 		throw new WebSearchError("mcp is not available in globalThis.");
@@ -42,6 +42,7 @@ export async function search(query: string, options: SearchOptions = {}): Promis
 	const contextMaxCharacters = options.context_max_characters ?? options.contextMaxCharacters ?? 10000;
 
 	return await _getMcp().call_tool(
+		"exa",
 		"web_search_exa",
 		{
 			query: q,
@@ -50,7 +51,6 @@ export async function search(query: string, options: SearchOptions = {}): Promis
 			livecrawl,
 			contextMaxCharacters,
 		},
-		"exa",
 	);
 }
 
@@ -61,12 +61,12 @@ export async function code_context(query: string, options: CodeContextOptions = 
 	}
 	const tokensNum = options.tokens_num ?? options.tokensNum ?? 5000;
 	return await _getMcp().call_tool(
+		"exa",
 		"get_code_context_exa",
 		{
 			query: q,
 			tokensNum,
 		},
-		"exa",
 	);
 }
 

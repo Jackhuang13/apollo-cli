@@ -1,21 +1,23 @@
 ---
 name: rlm-heartbeat
-description: Periodic orchestration heartbeat workflow for monitoring background subagents, collecting finished outputs, and emitting concise progress notes (`import { check_subagents, report_progress } from "rlm_heartbeat"`).
+description: Manage internal recurring RLM heartbeats for the current agent session (list, create, update, delete) from the TypeScript REPL (`import rlm_heartbeat from "rlm_heartbeat"`).
 ---
 
-# `rlm-heartbeat` — Orchestration Heartbeat
+# `rlm-heartbeat` — Internal Session Heartbeats
 
-Monitor active background subagents, collect completed work, intervene on stalled or failed workers, and emit concise progress updates.
+Create and manage internal recurring heartbeats that fire within the current agent session. These never touch the user-level `/heartbeat`.
 
 ## Import
 
 ```ts
-import { check_subagents, report_progress } from "rlm_heartbeat";
+import rlm_heartbeat from "rlm_heartbeat";
 ```
 
 ## Usage
 
 ```ts
-const summary = await check_subagents();
-await report_progress(`Subagents: ${summary.completed}/${summary.total} complete (${summary.running} running)`);
+await rlm_heartbeat.create("check the long test run", "5m", "tests", "follow_up");
+const all = await rlm_heartbeat.list(true);
+await rlm_heartbeat.update("job-1", undefined, undefined, undefined, "pause");
+await rlm_heartbeat.delete("job-1");
 ```

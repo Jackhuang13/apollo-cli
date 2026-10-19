@@ -1,6 +1,7 @@
 import * as acp from "@agentclientprotocol/sdk";
 import { describe, expect, it, vi } from "vitest";
 import type { AgentSessionRuntime } from "../src/core/agent-session-runtime.js";
+import { acpMcpCallToolCode, acpMcpListToolsCode } from "../src/core/tools/acp-mcp.js";
 import { resolveAcpMcpServers } from "../src/modes/acp/acp-mcp.js";
 import { runAcpModeWithConnection } from "../src/modes/acp/acp-mode.js";
 import { InProcessAgentConnection } from "../src/modes/agent-connection/in-process-agent-connection.js";
@@ -201,5 +202,30 @@ describe("ACP MCP servers", () => {
 				"/tmp",
 			),
 		).toThrow("Invalid params");
+	});
+});
+
+describe("ACP MCP kernel snippet dialects (AC-28)", () => {
+	it("emits a JS expression for the TS (script) kernel", () => {
+		expect(acpMcpListToolsCode("TaskTools", "script")).toBe('JSON.stringify(await mcp.list_tools("TaskTools"))');
+		expect(acpMcpCallToolCode("TaskTools", "search", { q: "x" }, "script")).toBe(
+			`JSON.stringify(await mcp.call_tool("TaskTools", "search", ${JSON.stringify({ q: "x" })}))`,
+		);
+	});
+
+	it("emits a Python print for the Python kernel", () => {
+		expect(acpMcpListToolsCode("TaskTools", "python")).toBe(
+			'print(__import__("json").dumps(await mcp.list_tools("TaskTools"), default=str))',
+		);
+		expect(acpMcpCallToolCode("TaskTools", "search", { q: "x" }, "python")).toBe(
+			`print(__import__("json").dumps(await mcp.call_tool("TaskTools", "search", __import__("json").loads(${JSON.stringify(JSON.stringify({ q: "x" }))})), default=str))`,
+		);
+	});
+
+	it("serializes empty tool arguments for both dialects", () => {
+		expect(acpMcpCallToolCode("s", "t", {}, "script")).toBe('JSON.stringify(await mcp.call_tool("s", "t", {}))');
+		expect(acpMcpCallToolCode("s", "t", {}, "python")).toBe(
+			'print(__import__("json").dumps(await mcp.call_tool("s", "t", __import__("json").loads("{}")), default=str))',
+		);
 	});
 });

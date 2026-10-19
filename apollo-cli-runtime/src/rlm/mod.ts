@@ -208,17 +208,33 @@ export async function collect(
 	return await op("rlm.collect", payload);
 }
 
-export async function progress_note(text: string, metadata: Record<string, unknown> = {}): Promise<void> {
-	if (is_active()) {
-		emit(
-			{
-				"application/vnd.apollo-cli.progress-note+json": { text, ...metadata },
-				"application/vnd.prime-agent.progress-note+json": { text, ...metadata },
-				"text/plain": text,
-			},
-			metadata,
-		);
+/** Hard bound for one progress note; the session handler owns the time throttle. */
+const RLM_PROGRESS_NOTE_MAX_LENGTH = 512;
+
+export interface ProgressNoteResult {
+	accepted: boolean;
+	/** Milliseconds until the next note can be accepted; absent when accepted. */
+	retry_after_ms?: number;
+}
+
+/**
+ * Report brief in-flight progress to the parent orchestrator. The note (at most
+ * 512 characters, about one per 10 seconds) reaches the parent's child snapshots
+ * and roster entries without steering the parent or requiring an explicit reply.
+ * A throttled note returns `accepted: false` with a `retry_after_ms` hint.
+ */
+export async function progress_note(message: string): Promise<ProgressNoteResult> {
+	if (typeof message !== "string") {
+		throw new TypeError(`message must be a string, got ${typeof message}`);
 	}
+	const stripped = message.trim();
+	if (!stripped) {
+		throw new Error("message must not be empty");
+	}
+	if (stripped.length > RLM_PROGRESS_NOTE_MAX_LENGTH) {
+		throw new Error(`message must be at most ${RLM_PROGRESS_NOTE_MAX_LENGTH} characters`);
+	}
+	return (await op("rlm.progress.note", { message: stripped })) as ProgressNoteResult;
 }
 
 export const progressNote = progress_note;

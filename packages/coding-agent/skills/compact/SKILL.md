@@ -1,6 +1,6 @@
 ---
 name: compact
-description: Inspect context-window usage and schedule session compaction when the conversation approaches the context limit. Import via `import { compact } from "compact"`.
+description: Inspect context-window usage and schedule session compaction when the conversation approaches the context limit. Import via `import compact, { status, run } from "compact"`.
 ---
 
 # `compact` — Context Compaction Management
@@ -10,20 +10,20 @@ Check token utilization and schedule session compaction at natural task boundari
 ## Import
 
 ```ts
-import { compact } from "compact";
+import compact, { status, run } from "compact";
 ```
 
 ## Check Context Usage
 
 ```ts
-const info = await compact.status();
-console.log(info.percent, info.should_compact);
+const info = await status(); // { tokens, context_window, percent, scheduled }
+console.log(info.percent, info.scheduled);
 ```
 
 ## Schedule Compaction
 
 ```ts
-await compact.request("Preserve current file paths, open TODOs, and test failure root causes.");
+await run("Preserve current file paths, open TODOs, and test failure root causes.");
 ```
 
-Compaction runs cleanly after the current turn completes while preserving your live TypeScript REPL variables.
+Compaction runs cleanly after the current turn completes while preserving your live REPL variables.

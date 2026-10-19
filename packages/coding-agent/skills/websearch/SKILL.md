@@ -1,6 +1,6 @@
 ---
 name: websearch
-description: Search the web and fetch technical documentation or code examples via Exa MCP (`import { search, code_context } from "websearch"` or `mcp.call_tool("web_search_exa", ...)`).
+description: Search the web and fetch technical documentation or code examples via Exa MCP (`import { search, code_context } from "websearch"` or `mcp.call_tool("exa", "web_search_exa", ...)`).
 ---
 
 # `websearch` — Web & Code Context Search
@@ -38,6 +38,6 @@ console.log(docs);
 You can also invoke Exa tools directly on the global `mcp` helper:
 
 ```ts
-await mcp.call_tool("web_search_exa", { query: "latest release notes", numResults: 8 }, "exa");
-await mcp.call_tool("get_code_context_exa", { query: "vitest fake timers", tokensNum: 5000 }, "exa");
+await mcp.call_tool("exa", "web_search_exa", { query: "latest release notes", numResults: 8 });
+await mcp.call_tool("exa", "get_code_context_exa", { query: "vitest fake timers", tokensNum: 5000 });
 ```

@@ -17,14 +17,21 @@ const bundledAgentMessageSkill = () => bundledSkill("agent-message", "agent_mess
 
 describe("agent-message skill over the kernel host bridge", () => {
 	let tempDir: string;
+	let originalCwd = "";
 	let provisioner: IpythonKernelProvisioner | undefined;
 
 	beforeEach(() => {
 		tempDir = join(tmpdir(), `pi-agent-message-skill-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		mkdirSync(tempDir, { recursive: true });
+		originalCwd = process.cwd();
+		process.chdir(tempDir);
 	});
 
 	afterEach(async () => {
+		if (originalCwd) {
+			process.chdir(originalCwd);
+			originalCwd = "";
+		}
 		await provisioner?.dispose();
 		provisioner = undefined;
 		rmSync(tempDir, { recursive: true, force: true });
@@ -221,7 +228,8 @@ except TypeError as error:
 			resolveLateMessage = resolve;
 		});
 		const result = await manager.execute(
-			`async def send_later():
+			`import asyncio
+async def send_later():
     await asyncio.sleep(0.05)
     await agent_message.send("background hello", receiver_role="sibling", receiver_name="beta")
 
@@ -243,14 +251,21 @@ background_send = asyncio.create_task(send_later())`,
 
 describe("rlm-heartbeat skill over the kernel host bridge", () => {
 	let tempDir: string;
+	let originalCwd = "";
 	let provisioner: IpythonKernelProvisioner | undefined;
 
 	beforeEach(() => {
 		tempDir = join(tmpdir(), `pi-rlm-heartbeat-skill-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		mkdirSync(tempDir, { recursive: true });
+		originalCwd = process.cwd();
+		process.chdir(tempDir);
 	});
 
 	afterEach(async () => {
+		if (originalCwd) {
+			process.chdir(originalCwd);
+			originalCwd = "";
+		}
 		await provisioner?.dispose();
 		provisioner = undefined;
 		rmSync(tempDir, { recursive: true, force: true });
@@ -345,14 +360,21 @@ except RuntimeError as error:
 
 describe("goal skill over the kernel host bridge", { tags: ["kernel-heavy"] }, () => {
 	let tempDir: string;
+	let originalCwd = "";
 	let provisioner: IpythonKernelProvisioner | undefined;
 
 	beforeEach(() => {
 		tempDir = join(tmpdir(), `pi-goal-skill-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		mkdirSync(tempDir, { recursive: true });
+		originalCwd = process.cwd();
+		process.chdir(tempDir);
 	});
 
 	afterEach(async () => {
+		if (originalCwd) {
+			process.chdir(originalCwd);
+			originalCwd = "";
+		}
 		await provisioner?.dispose();
 		provisioner = undefined;
 		rmSync(tempDir, { recursive: true, force: true });

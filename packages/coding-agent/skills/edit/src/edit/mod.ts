@@ -193,6 +193,10 @@ function _generateDiffString(
 	return { diff: output.join("\n"), firstChangedLine };
 }
 
+function _lineAt(content: string, index: number): number {
+	return content.slice(0, index).split("\n").length;
+}
+
 function _applySingleReplacement(
 	content: string,
 	oldText: string,
@@ -200,7 +204,7 @@ function _applySingleReplacement(
 	count: number,
 	displayPath: string,
 	label = "",
-): { content: string; replaced: number } {
+): { content: string; replaced: number; startLine?: number; appliedOld: string; appliedNew: string } {
 	if (!oldText) {
 		throw new EditError(`old text${label} must not be empty when editing ${displayPath}.`);
 	}
@@ -232,7 +236,13 @@ function _applySingleReplacement(
 				`No changes produced${label} in ${displayPath}. The replacement is identical to the original text.`,
 			);
 		}
-		return { content: updated, replaced: 1 };
+		return {
+			content: updated,
+			replaced: 1,
+			startLine: _lineAt(base, matchResult.index),
+			appliedOld: normOld,
+			appliedNew: normNew,
+		};
 	}
 
 	// count === 0 (all) or count > 1: exact match required
@@ -258,7 +268,14 @@ function _applySingleReplacement(
 	if (updated === content) {
 		throw new EditError(`No changes produced${label} in ${displayPath}.`);
 	}
-	return { content: updated, replaced: exactCount };
+	const firstIdx = content.indexOf(normOld);
+	return {
+		content: updated,
+		replaced: exactCount,
+		startLine: firstIdx >= 0 ? _lineAt(content, firstIdx) : undefined,
+		appliedOld: normOld,
+		appliedNew: normNew,
+	};
 }
 
 export function edit(
@@ -285,6 +302,7 @@ export function edit(
 
 	let workingContent = normalizedOriginal;
 	let totalReplacements = 0;
+	const hunkDisplays: Array<{ path: string; old_str: string; new_str: string; start_line?: number }> = [];
 
 	if (Array.isArray(oldOrChanges)) {
 		if (oldOrChanges.length === 0) {
@@ -306,6 +324,12 @@ export function edit(
 			);
 			workingContent = applied.content;
 			totalReplacements += applied.replaced;
+			hunkDisplays.push({
+				path: displayPath,
+				old_str: applied.appliedOld,
+				new_str: applied.appliedNew,
+				start_line: applied.startLine,
+			});
 		}
 	} else if (typeof oldOrChanges === "string") {
 		if (typeof newText !== "string") {
@@ -315,6 +339,12 @@ export function edit(
 		const applied = _applySingleReplacement(workingContent, oldOrChanges, newText, count, displayPath);
 		workingContent = applied.content;
 		totalReplacements = applied.replaced;
+		hunkDisplays.push({
+			path: displayPath,
+			old_str: applied.appliedOld,
+			new_str: applied.appliedNew,
+			start_line: applied.startLine,
+		});
 	} else {
 		throw new EditError("Second argument to edit() must be a string (old text) or an array of { old, new } changes.");
 	}
@@ -327,18 +357,13 @@ export function edit(
 	fs.writeFileSync(resolved, finalContent, "utf8");
 
 	const { diff, firstChangedLine } = _generateDiffString(normalizedOriginal, workingContent);
-	const diffPayload = {
-		path: displayPath,
-		diff,
-		firstChangedLine,
-		replacements: totalReplacements,
-	};
-
-	_emitDisplay({
-		[EDIT_DIFF_MIME]: diffPayload,
-		[LEGACY_EDIT_DIFF_MIME]: diffPayload,
-		"text/plain": diff || `Edited ${displayPath} (${totalReplacements} replacement(s))`,
-	});
+	for (const hunk of hunkDisplays) {
+		_emitDisplay({
+			[EDIT_DIFF_MIME]: hunk,
+			[LEGACY_EDIT_DIFF_MIME]: hunk,
+			"text/plain": hunk.start_line ? `Edited ${hunk.path} from line ${hunk.start_line}` : `Edited ${hunk.path}`,
+		});
+	}
 
 	return {
 		path: displayPath,

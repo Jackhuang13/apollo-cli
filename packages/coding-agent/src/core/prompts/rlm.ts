@@ -1,5 +1,3 @@
-import { DEFAULT_RLM_EXTRA_IMPORT_LABELS } from "../kernel/bootstrap.js";
-
 export interface RlmPromptOptions {
 	cwd: string;
 	skillsDir?: string;
@@ -14,7 +12,7 @@ export interface RlmPromptOptions {
 const LONG_RUNNING_WORK_PROMPT = [
 	"For slow or independently completing work, use a nonblocking control loop: start the work, record its handle or output location, then end your turn. A `bash()` handle left running beyond its creating cell sends a completion follow-up; when it arrives, inspect the saved handle and continue. Reading a finished handle's result first cancels that follow-up.",
 	"When delegation is available and useful, assign independent substantive tasks to separate workers. Start independent workers without waiting for each one sequentially, and let them run in parallel.",
-	"Do not keep the turn open by polling with `time.sleep()` or shell `sleep`, and do not replace polling with a long blocking `await`. Await only the short operation needed to start work or inspect a result that is already available; otherwise end the turn.",
+	"Do not keep the turn open by polling with fixed sleeps (a `setTimeout` delay or shell `sleep`), and do not replace polling with a long blocking `await`. Await only the short operation needed to start work or inspect a result that is already available; otherwise end the turn.",
 ].join("\n");
 
 const USER_PROGRESS_PROMPT =
@@ -76,7 +74,7 @@ export function buildChildAgentDoctrine(options: ChildAgentDoctrineOptions): str
 	];
 	if (hasAgentMessage && hasIpython) {
 		lines.push(
-			'When a task calls for an answer, reply explicitly with `await agent_message.send(message, receiver_role="parent")`. Not every message or task needs a reply; continue cleanup after sending and go idle normally.',
+			"When a task calls for an answer, reply explicitly with `await agent_message.send(message, { receiver_role: 'parent' })`. Not every message or task needs a reply; continue cleanup after sending and go idle normally.",
 		);
 	}
 	if (hasIpython) {
@@ -110,8 +108,6 @@ export function buildRlmPrompt(options: RlmPromptOptions): string {
 		`Working directory: ${cwd}`,
 		`Conversation log: ${messagesPath}`,
 		`Recursive agent depth: ${depth}`,
-		`Pre-installed Python packages: ${DEFAULT_RLM_EXTRA_IMPORT_LABELS.join(", ")}.`,
-		"Install additional packages with `uv pip install <pkg>` (this is a uv-managed venv with no pip module).",
 	];
 
 	const childDoctrine = buildChildAgentDoctrine(options);
@@ -126,10 +122,8 @@ export function buildRlmPrompt(options: RlmPromptOptions): string {
 	if (installedSkills.length > 0) {
 		const installed = installedSkills.map((skill) => `\`${skill}\``).join(", ");
 		if (hasIpython) {
-			skillLines.push(`Installed Python skill modules (pre-imported): ${installed}.`);
-			skillLines.push(
-				"Read each skill's SKILL.md for its API. Inspect a module with `help(<skill>)` or `dir(<skill>)`, then inspect a documented callable with `inspect.signature(<skill>.<function>)`.",
-			);
+			skillLines.push(`Installed skill modules (pre-imported): ${installed}.`);
+			skillLines.push("Read each skill's SKILL.md for its API and call its documented function.");
 		} else if (canRunShellSkills) {
 			skillLines.push(`Installed skills available as shell commands: ${installed}.`);
 		}
@@ -140,7 +134,7 @@ export function buildRlmPrompt(options: RlmPromptOptions): string {
 		}
 		if (hasIpython && installedSkills.includes("edit")) {
 			skillLines.push(
-				"For targeted existing-file edits, prefer the pre-imported async `edit` skill from the REPL: `old = '''...'''; new = '''...'''; await edit(path=\"pkg/file.py\", old_str=old, new_str=new)`. Use exact old/new strings; if the text contains triple double quotes, use triple single-quoted variables or build `old`/`new` from inspected file slices.",
+				'For targeted existing-file edits, prefer the pre-imported `edit` skill from the REPL: `await edit("pkg/file.ts", "old text", "new text")`. Use exact old/new strings; build `old`/`new` from inspected file slices when they contain special characters.',
 			);
 		}
 	}
@@ -161,14 +155,14 @@ export function buildRlmPrompt(options: RlmPromptOptions): string {
 	if (depth === 0 && hasIpython) {
 		parts.push(
 			"",
-			"From a daemon-backed depth-0 session, use `await rlm.create_session('task', name='researcher')` to start a separate top-level session. The call returns after the daemon creates the session and accepts its first prompt. Inline and nested sessions cannot use it. `rlm.spawn(...)` still creates a child.",
+			"From a daemon-backed depth-0 session, use `await rlm.create_session({ prompt: 'task', name: 'researcher' })` to start a separate top-level session. The call returns after the daemon creates the session and accepts its first prompt. Inline and nested sessions cannot use it. `rlm.spawn(...)` still creates a child.",
 		);
 	}
 
 	if (allowRecursion && hasIpython) {
 		parts.push(
 			"",
-			"An `rlm` object is already in your global namespace. `await rlm.spawn('sub-task', name='api-reviewer')` spawns a child and returns immediately after task admission with `rlm_child_id`, `name`, `session_dir`, and `model`; it never waits for or returns the child's answer.",
+			"An `rlm` object is already in your global namespace. `await rlm.spawn({ prompt: 'sub-task', name: 'api-reviewer' })` spawns a child and returns immediately after task admission with `rlm_child_id`, `name`, `session_dir`, and `model`; it never waits for or returns the child's answer.",
 			"`name` is required: choose a stable child name that is unique among siblings.",
 			"A child inherits your model. If a different model is explicitly requested, use `await rlm.find_models(...)` and an exact returned selector. An unavailable requested model fails spawn; decide whether to retry or omit `model`. Children also inherit your thinking level; the `thinking` option overrides it with any level the resolved child model supports, and an unsupported level fails spawn.",
 		);
@@ -179,8 +173,8 @@ export function buildRlmPrompt(options: RlmPromptOptions): string {
 		);
 		if (hasAgentMessage) {
 			parts.push(
-				"Children reply explicitly with `await agent_message.send(message, receiver_role='parent')` when an answer is needed. Replies and follow-ups arrive as ordinary agent messages; not every task requires a reply.",
-				"Use `agent_message.send(..., receiver_role='child', receiver_name=child.name)` for follow-ups.",
+				"Children reply explicitly with `await agent_message.send(message, { receiver_role: 'parent' })` when an answer is needed. Replies and follow-ups arrive as ordinary agent messages; not every task requires a reply.",
+				"Use `agent_message.send(message, { receiver_role: 'child', receiver_name: child.name })` for follow-ups.",
 			);
 		}
 		if (hasAgentObserve) {
@@ -222,11 +216,11 @@ export function buildSubagentGuidance(
 	const lines = [
 		"# Delegating to sub-agents",
 		"",
-		"Spawn independent, self-contained work with `handle = await rlm.spawn('task', name='worker')`. This returns at admission, not completion; keep the handle to stop or inspect the child later.",
+		"Spawn independent, self-contained work with `handle = await rlm.spawn({ prompt: 'task', name: 'worker' })`. This returns at admission, not completion; keep the handle to stop or inspect the child later.",
 	];
 	if (options.hasAgentMessage) {
 		lines.push(
-			"Ask for an explicit reply when needed. A child replies with `await agent_message.send(message, receiver_role='parent')`; parent follow-ups use `receiver_role='child'` plus the child's name or id. Not every message needs a reply.",
+			"Ask for an explicit reply when needed. A child replies with `await agent_message.send(message, { receiver_role: 'parent' })`; parent follow-ups use `{ receiver_role: 'child' }` plus the child's name or id. Not every message needs a reply.",
 		);
 	}
 	lines.push("Use `await rlm.list_subagents()` after kernel restart or compaction.");
@@ -237,7 +231,7 @@ export function buildSubagentGuidance(
 		lines.push("Use `agent_observe` for bounded transcript inspection.");
 	}
 	lines.push(
-		"Fan-in results with `await rlm.collect(targets, timeout_ms=0)`: it returns typed snapshots of direct children (status, answer preview, error) without steering anyone; an explicit timeout blocks only that call until the children settle or the deadline passes.",
+		"Fan-in results with `await rlm.collect(targets, { timeout_ms: 0 })`: it returns typed snapshots of direct children (status, answer preview, error) without steering anyone; an explicit timeout blocks only that call until the children settle or the deadline passes.",
 		"Large child outputs belong in files that you read selectively; `collect` snapshots are previews, not full results.",
 		"Delegate parallel context-heavy research or independent implementation; do a single known lookup, edit, or command inline.",
 	);

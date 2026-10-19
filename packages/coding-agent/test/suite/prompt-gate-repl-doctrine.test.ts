@@ -26,7 +26,15 @@ const SKILL = {
 const REPL_MARKERS = [
 	"persistent TypeScript/JavaScript REPL",
 	"An `rlm` object is already in your global namespace",
-	"await agent_message.send(message, receiver_role='parent')",
+	"await agent_message.send(message, { receiver_role: 'parent' })",
+];
+
+const PYTHON_ONLY_MARKERS = [
+	"time.sleep()",
+	"uv pip install",
+	"inspect.signature(",
+	"old_str=old",
+	"name='api-reviewer'",
 ];
 
 function rlmPrompt(activeTools: string[] | undefined, installedSkills: string[] = []) {
@@ -58,6 +66,22 @@ describe("REPL doctrine gate (AC-18)", () => {
 		for (const marker of REPL_MARKERS) {
 			expect(prompt).toContain(marker);
 		}
+	});
+
+	it("buildRlmPrompt uses real TS call shapes and no Python-only syntax (AC-24)", () => {
+		const prompt = buildRlmPrompt({
+			cwd: "/tmp",
+			messagesPath: "/tmp/messages.jsonl",
+			activeTools: ["iscript"],
+			installedSkills: ["agent_message", "agent_observe"],
+			depth: 0,
+		});
+		for (const marker of PYTHON_ONLY_MARKERS) {
+			expect(prompt).not.toContain(marker);
+		}
+		expect(prompt).toContain("rlm.spawn({ prompt: 'sub-task', name: 'api-reviewer' })");
+		expect(prompt).toContain("rlm.create_session({ prompt: 'task', name: 'researcher' })");
+		expect(buildSubagentGuidance({ hasAgentMessage: true })).toContain("rlm.collect(targets, { timeout_ms: 0 })");
 	});
 
 	it("buildRlmPrompt omits the REPL doctrine when no REPL tool is active", () => {

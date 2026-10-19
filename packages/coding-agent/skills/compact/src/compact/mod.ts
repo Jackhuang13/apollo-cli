@@ -5,110 +5,63 @@ export class CompactError extends Error {
 	}
 }
 
-export interface CompactOptions {
-	instructions?: string;
-}
-
 export interface CompactStatus {
 	tokens: number | null;
-	context_window: number;
-	contextWindow: number;
+	context_window: number | null;
 	percent: number | null;
-	threshold_percent: number;
-	thresholdPercent: number;
-	should_compact: boolean;
-	shouldCompact: boolean;
-	compacting: boolean;
-	pending_request: boolean;
-	pendingRequest: boolean;
+	scheduled: boolean;
 }
 
-export interface CompactRequestResult {
-	status: string;
-	tokens: number | null;
-	context_window: number;
-	contextWindow: number;
-	percent: number | null;
-	instructions?: string;
+export interface CompactRunResult {
+	scheduled: boolean;
+	reason?: string;
+	note?: string;
 }
 
-function _getHostRequest(): (payload: Record<string, unknown>, timeout?: number) => Promise<Record<string, unknown>> {
-	const g = globalThis as {
-		host_request?: (payload: Record<string, unknown>, timeout?: number) => Promise<Record<string, unknown>>;
-	};
+type HostRequest = (op: string, payload?: Record<string, unknown>) => Promise<Record<string, unknown>>;
+
+function _getHostRequest(): HostRequest {
+	const g = globalThis as { host_request?: HostRequest };
 	if (typeof g.host_request !== "function") {
 		throw new CompactError("compact skill requires an active REPL cell with host_request support.");
 	}
 	return g.host_request;
 }
 
+/** Read current context usage from the host. */
 export async function status(): Promise<CompactStatus> {
-	const hostReq = _getHostRequest();
-	const reply = await hostReq({ op: "compact_status" });
-	if (reply.ok === false) {
-		throw new CompactError(String(reply.error ?? "compact_status failed"));
-	}
-	const tokens = typeof reply.tokens === "number" ? reply.tokens : null;
-	const contextWindow = typeof reply.context_window === "number" ? reply.context_window : 0;
-	const percent = typeof reply.percent === "number" ? reply.percent : null;
-	const thresholdPercent = typeof reply.threshold_percent === "number" ? reply.threshold_percent : 80;
-	const shouldCompact = Boolean(reply.should_compact);
-	const compacting = Boolean(reply.compacting);
-	const pendingRequest = Boolean(reply.pending_request);
-
+	const reply = await _getHostRequest()("compact.status");
 	return {
-		tokens,
-		context_window: contextWindow,
-		contextWindow,
-		percent,
-		threshold_percent: thresholdPercent,
-		thresholdPercent,
-		should_compact: shouldCompact,
-		shouldCompact,
-		compacting,
-		pending_request: pendingRequest,
-		pendingRequest,
+		tokens: typeof reply.tokens === "number" ? reply.tokens : null,
+		context_window: typeof reply.context_window === "number" ? reply.context_window : null,
+		percent: typeof reply.percent === "number" ? reply.percent : null,
+		scheduled: reply.scheduled === true,
 	};
 }
 
-export async function request(
-	instructionsOrOptions?: string | CompactOptions,
-): Promise<CompactRequestResult> {
-	const instructions =
-		typeof instructionsOrOptions === "string"
-			? instructionsOrOptions.trim()
-			: instructionsOrOptions?.instructions?.trim();
-
-	const hostReq = _getHostRequest();
-	const payload: Record<string, unknown> = { op: "compact_request" };
-	if (instructions) {
+/** Schedule context compaction; it runs when the current turn ends. */
+export async function run(instructions?: string): Promise<CompactRunResult> {
+	if (instructions !== undefined && typeof instructions !== "string") {
+		throw new CompactError(`instructions must be a string when provided, got ${typeof instructions}`);
+	}
+	const payload: Record<string, unknown> = {};
+	if (instructions !== undefined) {
 		payload.instructions = instructions;
 	}
-	const reply = await hostReq(payload);
-	if (reply.ok === false) {
-		throw new CompactError(String(reply.error ?? "compact_request failed"));
-	}
-
-	const contextWindow = typeof reply.context_window === "number" ? reply.context_window : 0;
+	const reply = await _getHostRequest()("compact.run", payload);
 	return {
-		status: String(reply.status ?? "scheduled"),
-		tokens: typeof reply.tokens === "number" ? reply.tokens : null,
-		context_window: contextWindow,
-		contextWindow,
-		percent: typeof reply.percent === "number" ? reply.percent : null,
-		instructions: typeof reply.instructions === "string" ? reply.instructions : instructions,
+		scheduled: reply.scheduled === true,
+		reason: typeof reply.reason === "string" ? reply.reason : undefined,
+		note: typeof reply.note === "string" ? reply.note : undefined,
 	};
 }
 
-export const compact = Object.assign(
-	async function compactFn(instructionsOrOptions?: string | CompactOptions): Promise<CompactRequestResult> {
-		return await request(instructionsOrOptions);
-	},
-	{
-		status,
-		request,
-		CompactError,
-	},
-);
+export const request = run;
 
+export const compact = Object.assign(
+	async function compactFn(instructions?: string): Promise<CompactRunResult> {
+		return await run(instructions);
+	},
+	{ status, run, request, CompactError },
+);
 export default compact;

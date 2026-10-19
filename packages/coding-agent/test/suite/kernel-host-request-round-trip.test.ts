@@ -249,6 +249,25 @@ describe("host_request round-trip (real TS runtime, scripted host)", () => {
 		await host.waitFrame((candidate) => candidate.event === "done" && candidate.id === "rt-bash-consume");
 	});
 
+	it("rlm.progress_note issues rlm.progress.note with {message} and returns the throttle result", async () => {
+		host.send({
+			type: "execute",
+			id: "rt-prog",
+			code: 'const r = await rlm.progress_note("probe note"); JSON.stringify(r)',
+		});
+		const frame = await host.waitFrame(
+			(candidate) => candidate.event === "host_request" && (candidate.data as Frame).type === "rlm.progress.note",
+		);
+		expect(frame.data).toMatchObject({ type: "rlm.progress.note", message: "probe note" });
+		host.replyToHostRequest(String(frame.id ?? ""), {
+			status: "ok",
+			result: { accepted: false, retry_after_ms: 250 },
+		});
+		const result = await host.waitFrame((candidate) => candidate.event === "result" && candidate.id === "rt-prog");
+		expect(result.text).toBe(`'${JSON.stringify({ accepted: false, retry_after_ms: 250 })}'`);
+		await host.waitFrame((candidate) => candidate.event === "done" && candidate.id === "rt-prog");
+	});
+
 	it("closes host stdin rejects every pending host request", async () => {
 		host.send({
 			type: "execute",

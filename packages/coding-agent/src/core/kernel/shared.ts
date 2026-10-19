@@ -292,6 +292,8 @@ export interface KernelClient {
 	readonly ownerSessionId: string | undefined;
 	readonly isRunning: boolean;
 	readonly hasBackgroundWork: boolean;
+	/** Active kernel dialect: the TS/JS "script" runtime or the Python fallback. */
+	readonly interpreter: "script" | "python";
 	/** Terminal: the kernel died or was torn down; only a fresh manager can serve again. */
 	readonly isDefunct: boolean;
 	start(options?: KernelStartOptions): Promise<void>;

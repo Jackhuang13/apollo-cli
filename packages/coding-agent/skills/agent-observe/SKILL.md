@@ -1,24 +1,22 @@
 ---
 name: agent-observe
-description: Inspect live subagent status, recent activity, and transcripts from the TypeScript REPL (`import { list_subagents, inspect_subagent } from "agent_observe"`).
+description: Read-only observation of your agent family (parent, siblings, children) from the TypeScript REPL (`import agent_observe from "agent_observe"`).
 ---
 
-# `agent-observe` — Subagent Observation & Diagnostics
+# `agent-observe` — Family Observation
 
-Observe active and completed subagents, inspect their recent progress, and collect results.
+Read live session summaries and bounded recent message previews for your agent family.
 
 ## Import
 
 ```ts
-import { list_subagents, inspect_subagent } from "agent_observe";
+import agent_observe from "agent_observe";
 ```
 
 ## Usage
 
 ```ts
-const agents = await list_subagents();
-console.log(agents);
-
-// Or via global rlm helper:
-const all = await rlm.list_subagents();
+const family = await agent_observe.list_agents();
+const one = await agent_observe.get("parent");
+const recent = await agent_observe.recent("child", 8, 800);
 ```

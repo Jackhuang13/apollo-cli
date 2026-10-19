@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ReplKernelManager } from "../src/core/kernel/index.js";
 
 let tempDir = "";
+let originalCwd = "";
 
 function writeFakeRuntime(path: string): void {
 	writeFileSync(
@@ -141,9 +142,15 @@ function restoreCount(path: string): number {
 describe("ReplKernelManager corrupt protocol repair", () => {
 	beforeEach(() => {
 		tempDir = mkdtempSync(join(tmpdir(), "prime-agent-repl-corrupt-"));
+		originalCwd = process.cwd();
+		process.chdir(tempDir);
 	});
 
 	afterEach(() => {
+		if (originalCwd) {
+			process.chdir(originalCwd);
+			originalCwd = "";
+		}
 		if (tempDir) {
 			rmSync(tempDir, { recursive: true, force: true });
 			tempDir = "";

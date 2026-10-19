@@ -20,14 +20,21 @@ function bundledAttachImageSkill(): PythonSkillRuntimeInfo {
 
 describe("attach-image skill over the kernel host bridge", () => {
 	let tempDir: string;
+	let originalCwd = "";
 	let provisioner: IpythonKernelProvisioner | undefined;
 
 	beforeEach(() => {
 		tempDir = join(tmpdir(), `pi-attach-image-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		mkdirSync(tempDir, { recursive: true });
+		originalCwd = process.cwd();
+		process.chdir(tempDir);
 	});
 
 	afterEach(async () => {
+		if (originalCwd) {
+			process.chdir(originalCwd);
+			originalCwd = "";
+		}
 		await provisioner?.dispose();
 		provisioner = undefined;
 		rmSync(tempDir, { recursive: true, force: true });
@@ -45,7 +52,7 @@ describe("attach-image skill over the kernel host bridge", () => {
 		});
 
 		const manager = await provisioner.ensure();
-		const result = await manager.execute(`print(await attach_image(${JSON.stringify(imagePath)}))`);
+		const result = await manager.execute(`print(await attach_image.run(${JSON.stringify(imagePath)}))`);
 
 		expect(result.status).toBe("ok");
 		expect(result.stdout.trim()).toContain("Loaded 1 image(s) into context");
@@ -72,7 +79,7 @@ describe("attach-image skill over the kernel host bridge", () => {
 from PIL import Image
 img = Image.new("RGB", (2400, 1800), (32, 64, 96))
 img.save(${JSON.stringify(imagePath)})
-print(await attach_image(${JSON.stringify(imagePath)}))
+print(await attach_image.run(${JSON.stringify(imagePath)}))
 `);
 
 		expect(result.status).toBe("ok");
@@ -97,7 +104,7 @@ print(await attach_image(${JSON.stringify(imagePath)}))
 from PIL import Image
 frames = [Image.new("RGB", (1300, 10), color) for color in ("red", "blue")]
 frames[0].save(${JSON.stringify(imagePath)}, save_all=True, append_images=frames[1:], duration=50, loop=0)
-print(await attach_image(${JSON.stringify(imagePath)}))
+print(await attach_image.run(${JSON.stringify(imagePath)}))
 `);
 
 		expect(result.status).toBe("ok");
@@ -124,7 +131,7 @@ img = Image.new("RGBA", (1300, 10), (0, 0, 0, 0))
 draw = ImageDraw.Draw(img)
 draw.rectangle((0, 0, 1299, 9), fill=(255, 255, 255, 255))
 img.save(${JSON.stringify(imagePath)})
-print(await attach_image(${JSON.stringify(imagePath)}))
+print(await attach_image.run(${JSON.stringify(imagePath)}))
 `);
 
 		expect(result.status).toBe("ok");
@@ -160,7 +167,7 @@ png += png_chunk(b"IEND", b"")
 with open(${JSON.stringify(imagePath)}, "wb") as file:
     file.write(png)
 try:
-    await attach_image(${JSON.stringify(imagePath)})
+    await attach_image.run(${JSON.stringify(imagePath)})
 except ValueError as error:
     print(f"ValueError: {error}")
 `);
@@ -198,7 +205,7 @@ png += png_chunk(b"IEND", b"")
 with open(${JSON.stringify(corruptImagePath)}, "wb") as file:
     file.write(png)
 try:
-    await attach_image(${JSON.stringify(validImagePath)}, ${JSON.stringify(corruptImagePath)})
+    await attach_image.run(${JSON.stringify(validImagePath)}, ${JSON.stringify(corruptImagePath)})
 except ValueError as error:
     print(f"ValueError: {error}")
 `);
@@ -222,7 +229,7 @@ except ValueError as error:
 		const manager = await provisioner.ensure();
 		const result = await manager.execute(`
 try:
-    await attach_image(${JSON.stringify(imagePath)})
+    await attach_image.run(${JSON.stringify(imagePath)})
 except RuntimeError as error:
     print(f"RuntimeError: {error}")
 `);
@@ -249,7 +256,7 @@ except RuntimeError as error:
 		const manager = await provisioner.ensure();
 		const result = await manager.execute(`
 try:
-    await attach_image(${JSON.stringify(notImage)})
+    await attach_image.run(${JSON.stringify(notImage)})
 except ValueError as error:
     print(f"ValueError: {error}")
 `);
@@ -276,14 +283,21 @@ print("done")
 
 describe("agent-observe skill over the kernel host bridge", () => {
 	let tempDir: string;
+	let originalCwd = "";
 	let provisioner: IpythonKernelProvisioner | undefined;
 
 	beforeEach(() => {
 		tempDir = join(tmpdir(), `pi-agent-observe-skill-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		mkdirSync(tempDir, { recursive: true });
+		originalCwd = process.cwd();
+		process.chdir(tempDir);
 	});
 
 	afterEach(async () => {
+		if (originalCwd) {
+			process.chdir(originalCwd);
+			originalCwd = "";
+		}
 		await provisioner?.dispose();
 		provisioner = undefined;
 		rmSync(tempDir, { recursive: true, force: true });

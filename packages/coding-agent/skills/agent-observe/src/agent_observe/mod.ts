@@ -5,50 +5,51 @@ export class AgentObserveError extends Error {
 	}
 }
 
-function _getHostRequest(): (payload: Record<string, unknown>, timeout?: number) => Promise<Record<string, unknown>> {
-	const g = globalThis as {
-		host_request?: (payload: Record<string, unknown>, timeout?: number) => Promise<Record<string, unknown>>;
-	};
+type HostRequest = (op: string, payload?: Record<string, unknown>) => Promise<Record<string, unknown>>;
+
+function _getHostRequest(): HostRequest {
+	const g = globalThis as { host_request?: HostRequest };
 	if (typeof g.host_request !== "function") {
 		throw new AgentObserveError("agent_observe requires an active REPL cell with host_request support.");
 	}
 	return g.host_request;
 }
 
-export async function list_subagents(): Promise<unknown[]> {
-	const reply = await _getHostRequest()({ op: "rlm_list_subagents" });
-	if (reply.ok === false) {
-		throw new AgentObserveError(String(reply.error ?? "rlm_list_subagents failed"));
-	}
-	return (reply.subagents as unknown[]) ?? (reply.result as unknown[]) ?? [];
+/** List the full nuclear family: parent, siblings, children, active or not. */
+export async function list_agents(): Promise<Record<string, unknown>> {
+	return _getHostRequest()("agent_observe.list");
 }
-export const listSubagents = list_subagents;
 
-export async function inspect_subagent(
-	subagentId: string,
-	options: { tail?: number; include_transcript?: boolean } = {},
-): Promise<Record<string, unknown>> {
-	const id = String(subagentId ?? "").trim();
-	if (!id) {
-		throw new AgentObserveError("inspect_subagent(subagentId) requires a non-empty subagentId.");
+/** Read one live session summary by active id, session id/name, or suffix. */
+export async function get(target: string): Promise<Record<string, unknown>> {
+	if (typeof target !== "string") {
+		throw new AgentObserveError(`target must be a string, got ${typeof target}`);
 	}
-	const reply = await _getHostRequest()({
-		op: "rlm_inspect_subagent",
-		subagent_id: id,
-		...options,
-	});
-	if (reply.ok === false) {
-		throw new AgentObserveError(String(reply.error ?? "rlm_inspect_subagent failed"));
-	}
-	return (reply.result as Record<string, unknown>) ?? reply;
+	return _getHostRequest()("agent_observe.get", { target });
 }
-export const inspectSubagent = inspect_subagent;
+
+/** Read bounded recent message previews from an active session. */
+export async function recent(
+	target: string,
+	limit = 8,
+	max_chars = 800,
+): Promise<Record<string, unknown>> {
+	if (typeof target !== "string") {
+		throw new AgentObserveError(`target must be a string, got ${typeof target}`);
+	}
+	if (typeof limit !== "number") {
+		throw new AgentObserveError(`limit must be a number, got ${typeof limit}`);
+	}
+	if (typeof max_chars !== "number") {
+		throw new AgentObserveError(`max_chars must be a number, got ${typeof max_chars}`);
+	}
+	return _getHostRequest()("agent_observe.recent", { target, limit, max_chars });
+}
 
 export const agent_observe = {
-	list_subagents,
-	listSubagents,
-	inspect_subagent,
-	inspectSubagent,
+	list_agents,
+	get,
+	recent,
 	AgentObserveError,
 };
 export const agentObserve = agent_observe;
