@@ -111,5 +111,4 @@ export const rlm_heartbeat = {
 	update,
 	delete: deleteHeartbeat,
 };
-export const orchestration_heartbeat = rlm_heartbeat;
 export default rlm_heartbeat;

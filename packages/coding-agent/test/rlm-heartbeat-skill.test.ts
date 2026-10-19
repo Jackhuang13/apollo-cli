@@ -1,10 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import rlm_heartbeat, {
-	create,
-	list,
-	orchestration_heartbeat,
-	update,
-} from "../skills/rlm-heartbeat/src/rlm_heartbeat/mod.js";
+import orchestration_heartbeat from "../skills/orchestration-heartbeat/src/orchestration_heartbeat/mod.js";
+import rlm_heartbeat, { create, list, update } from "../skills/rlm-heartbeat/src/rlm_heartbeat/mod.js";
 
 describe("rlm_heartbeat skill (AC-30, AC-32)", () => {
 	let hr: ReturnType<typeof vi.fn>;
@@ -58,9 +54,11 @@ describe("rlm_heartbeat skill (AC-30, AC-32)", () => {
 	});
 
 	it("exposes list/create/update/delete and orchestration_heartbeat is self-contained (AC-32)", () => {
-		expect(orchestration_heartbeat).toBe(rlm_heartbeat);
-		for (const fn of ["list", "create", "update", "delete"]) {
-			expect(typeof rlm_heartbeat[fn as "list"]).toBe("function");
+		expect(orchestration_heartbeat).not.toBe(rlm_heartbeat);
+		for (const obj of [rlm_heartbeat, orchestration_heartbeat]) {
+			for (const fn of ["list", "create", "update", "delete"]) {
+				expect(typeof obj[fn as "list"]).toBe("function");
+			}
 		}
 	});
 });

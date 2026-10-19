@@ -1,8 +1,9 @@
 import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getBundledSkillsDir } from "../src/config.js";
+import { ensureKernelPython } from "../src/core/kernel/bootstrap.js";
 import type { KernelSentAgentMessage } from "../src/core/kernel/index.js";
 import type { PythonSkillRuntimeInfo } from "../src/core/skills.js";
 import { IpythonKernelProvisioner } from "../src/core/tools/ipython.js";
@@ -20,11 +21,14 @@ describe("agent-message skill over the kernel host bridge", () => {
 	let originalCwd = "";
 	let provisioner: IpythonKernelProvisioner | undefined;
 
-	beforeEach(() => {
+	beforeEach(async () => {
 		tempDir = join(tmpdir(), `pi-agent-message-skill-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		mkdirSync(tempDir, { recursive: true });
 		originalCwd = process.cwd();
 		process.chdir(tempDir);
+		// Explicit python pin: an untracked dist/apollo-cli-runtime build artifact must not flip these tests to the TS kernel.
+		const kernelPython = await ensureKernelPython({ pythonSkills: [bundledAgentMessageSkill()] });
+		vi.stubEnv("PRIME_AGENT_KERNEL_PYTHON", kernelPython);
 	});
 
 	afterEach(async () => {
@@ -32,6 +36,7 @@ describe("agent-message skill over the kernel host bridge", () => {
 			process.chdir(originalCwd);
 			originalCwd = "";
 		}
+		vi.unstubAllEnvs();
 		await provisioner?.dispose();
 		provisioner = undefined;
 		rmSync(tempDir, { recursive: true, force: true });
@@ -254,11 +259,14 @@ describe("rlm-heartbeat skill over the kernel host bridge", () => {
 	let originalCwd = "";
 	let provisioner: IpythonKernelProvisioner | undefined;
 
-	beforeEach(() => {
+	beforeEach(async () => {
 		tempDir = join(tmpdir(), `pi-rlm-heartbeat-skill-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		mkdirSync(tempDir, { recursive: true });
 		originalCwd = process.cwd();
 		process.chdir(tempDir);
+		// Explicit python pin: an untracked dist/apollo-cli-runtime build artifact must not flip these tests to the TS kernel.
+		const kernelPython = await ensureKernelPython({ pythonSkills: [bundledSkill("rlm-heartbeat", "rlm_heartbeat")] });
+		vi.stubEnv("PRIME_AGENT_KERNEL_PYTHON", kernelPython);
 	});
 
 	afterEach(async () => {
@@ -266,6 +274,7 @@ describe("rlm-heartbeat skill over the kernel host bridge", () => {
 			process.chdir(originalCwd);
 			originalCwd = "";
 		}
+		vi.unstubAllEnvs();
 		await provisioner?.dispose();
 		provisioner = undefined;
 		rmSync(tempDir, { recursive: true, force: true });
@@ -363,11 +372,14 @@ describe("goal skill over the kernel host bridge", { tags: ["kernel-heavy"] }, (
 	let originalCwd = "";
 	let provisioner: IpythonKernelProvisioner | undefined;
 
-	beforeEach(() => {
+	beforeEach(async () => {
 		tempDir = join(tmpdir(), `pi-goal-skill-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		mkdirSync(tempDir, { recursive: true });
 		originalCwd = process.cwd();
 		process.chdir(tempDir);
+		// Explicit python pin: an untracked dist/apollo-cli-runtime build artifact must not flip these tests to the TS kernel.
+		const kernelPython = await ensureKernelPython({ pythonSkills: [bundledSkill("goal", "goal")] });
+		vi.stubEnv("PRIME_AGENT_KERNEL_PYTHON", kernelPython);
 	});
 
 	afterEach(async () => {
@@ -375,6 +387,7 @@ describe("goal skill over the kernel host bridge", { tags: ["kernel-heavy"] }, (
 			process.chdir(originalCwd);
 			originalCwd = "";
 		}
+		vi.unstubAllEnvs();
 		await provisioner?.dispose();
 		provisioner = undefined;
 		rmSync(tempDir, { recursive: true, force: true });

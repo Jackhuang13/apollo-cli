@@ -299,6 +299,91 @@ describe("host_request round-trip (real TS runtime, scripted host)", () => {
 	});
 });
 
+describe("rlm.* client wire shapes (AC-07, AC-08, AC-09)", () => {
+	const host = new RuntimeHost();
+
+	beforeAll(async () => {
+		await host.start();
+	});
+
+	afterAll(async () => {
+		try {
+			host.send({ type: "shutdown" });
+			await host.exit();
+		} finally {
+			host.dispose();
+		}
+	});
+
+	it.each<[string, string, Frame, Frame]>([
+		[
+			"spawn",
+			'const r = await rlm.spawn({ prompt: "do it", name: "w1", model: "m1", thinking_level: "low" }); JSON.stringify(r)',
+			{ type: "rlm.run", prompt: "do it", kwargs: { name: "w1", model: "m1", thinking: "low" } },
+			{ rlm_child_id: "c1", name: "w1" },
+		],
+		[
+			"create_session",
+			'const r = await rlm.create_session({ prompt: "s", name: "s1", cwd: "/work" }); JSON.stringify(r)',
+			{ type: "rlm.create_session", prompt: "s", kwargs: { name: "s1", cwd: "/work" } },
+			{ active_session_id: "as1", name: "s1" },
+		],
+		[
+			"find_models",
+			'const r = await rlm.find_models("gpt", 3); JSON.stringify(r)',
+			{ type: "rlm.find_models", query: "gpt", limit: 3 },
+			{ models: ["m1", "m2"] },
+		],
+		[
+			"list_subagents",
+			"const r = await rlm.list_subagents(); JSON.stringify(r)",
+			{ type: "rlm.list_subagents" },
+			{ subagents: [{ id: "a1" }] },
+		],
+		[
+			"collect",
+			'const r = await rlm.collect(["w1"], { timeout_ms: 1000 }); JSON.stringify(r)',
+			{ type: "rlm.collect", targets: ["w1"], timeout_ms: 1000 },
+			{ results: [{ id: "w1", status: "done" }] },
+		],
+		[
+			"delete_subagent",
+			'const r = await rlm.delete_subagent("w1"); JSON.stringify(r)',
+			{ type: "rlm.delete_subagent", target: "w1" },
+			{ deleted: true },
+		],
+	])("rlm.%s issues its wire op and payload, then unwraps the reply", async (label, code, payload, replyResult) => {
+		const id = `rt-wire-${label}`;
+		host.send({ type: "execute", id, code });
+		const frame = await host.waitFrame(
+			(candidate) => candidate.event === "host_request" && (candidate.data as Frame).type === payload.type,
+		);
+		expect(frame.data).toEqual(payload);
+		host.replyToHostRequest(String(frame.id ?? ""), { status: "ok", result: replyResult });
+		const unwrap: Record<string, keyof Frame> = { "rlm.find_models": "models", "rlm.list_subagents": "subagents" };
+		const key = unwrap[String(payload.type)];
+		const returned = key === undefined ? replyResult : replyResult[key];
+		const result = await host.waitFrame((candidate) => candidate.event === "result" && candidate.id === id);
+		expect(result.text).toBe(`'${JSON.stringify(returned)}'`);
+		await host.waitFrame((candidate) => candidate.event === "done" && candidate.id === id);
+	});
+
+	it("rlm.spawn rejects unsupported kwargs client-side without emitting a host_request", async () => {
+		host.send({
+			type: "execute",
+			id: "rt-wire-reject",
+			code: 'await rlm.spawn({ prompt: "do it", name: "w1", cwd: "/work" }).then(() => "spawned", (e) => String(e.message))',
+		});
+		const result = await host.waitFrame(
+			(candidate) => candidate.event === "result" && candidate.id === "rt-wire-reject",
+		);
+		expect(String(result.text)).toContain("remove unsupported options: cwd");
+		// No host_reply is sent: an emitted host_request would leave the cell awaiting the host, so done never arrives.
+		const done = await host.waitFrame((candidate) => candidate.event === "done" && candidate.id === "rt-wire-reject");
+		expect(done.status).toBe("ok");
+	});
+});
+
 describe("interpreter bootstrap dialects (AC-14, AC-15, AC-20, AC-21)", () => {
 	const skillsDir = resolve(process.cwd(), "skills");
 	const pythonRuntimeSrc = resolve(process.cwd(), "../../prime-agent-runtime/src");
