@@ -60,9 +60,14 @@ export interface ChildAgentDoctrineOptions {
 	activeTools?: string[];
 }
 
+/** True when the selected tools include the kernel REPL (iscript or its legacy alias ipython). */
+export function hasReplTool(tools?: string[]): boolean {
+	return tools === undefined || tools.includes("iscript") || tools.includes("ipython");
+}
+
 export function buildChildAgentDoctrine(options: ChildAgentDoctrineOptions): string | undefined {
 	const depth = options.depth ?? 0;
-	const hasIpython = options.activeTools === undefined || options.activeTools.includes("ipython");
+	const hasIpython = hasReplTool(options.activeTools);
 	const hasAgentMessage = options.installedSkills?.includes("agent_message") ?? false;
 	if (depth <= 0) return undefined;
 
@@ -90,7 +95,7 @@ export function buildRlmPrompt(options: RlmPromptOptions): string {
 	const allowRecursion = options.allowRecursion ?? true;
 	const depth = options.depth ?? 0;
 	const activeTools = options.activeTools ?? [];
-	const hasIpython = options.activeTools === undefined ? true : activeTools.includes("ipython");
+	const hasIpython = hasReplTool(options.activeTools);
 	const canRunShellSkills = hasIpython || activeTools.includes("bash");
 	const parts = [
 		"You are a general purpose agent that uses code to solve tasks.",

@@ -2,7 +2,7 @@
  * System prompt construction and project context loading
  */
 
-import { buildChildAgentDoctrine, buildRlmPrompt, buildSubagentGuidance } from "./prompts/index.js";
+import { buildChildAgentDoctrine, buildRlmPrompt, buildSubagentGuidance, hasReplTool } from "./prompts/index.js";
 import { REFINE_SKILL_NAME } from "./refinement/index.js";
 import { formatSkillsForPrompt, getPythonSkillRuntimeInfo, type Skill } from "./skills.js";
 
@@ -62,7 +62,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 	const contextFiles = providedContextFiles ?? [];
 	const skills = providedSkills ?? [];
 	const tools = selectedTools ?? ["iscript"];
-	const hasIpython = tools.includes("iscript") || tools.includes("ipython");
+	const hasIpython = hasReplTool(selectedTools);
 	const visibleSkills = skills.filter((skill) => !skill.disableModelInvocation);
 
 	const visiblePythonSkillImportNames = getPythonSkillRuntimeInfo(visibleSkills).map((skill) => skill.importName);
@@ -83,7 +83,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 
 		// Append skills section only when the model has a way to inspect skill files.
 		const customPromptHasFileAccess =
-			!selectedTools || selectedTools.includes("ipython") || selectedTools.includes("bash");
+			hasReplTool(selectedTools) || (selectedTools !== undefined && selectedTools.includes("bash"));
 		if (customPromptHasFileAccess && skills.length > 0) {
 			prompt += formatSkillsForPrompt(skills);
 		}
@@ -156,7 +156,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 	}
 
 	// Append skills section only when the model has a way to inspect skill files.
-	const hasFileAccess = tools.includes("iscript") || tools.includes("ipython") || tools.includes("bash");
+	const hasFileAccess = hasReplTool(selectedTools) || (selectedTools !== undefined && selectedTools.includes("bash"));
 	if (hasFileAccess && skills.length > 0) {
 		prompt += formatSkillsForPrompt(skills);
 	}

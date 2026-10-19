@@ -13,11 +13,14 @@ import {
 } from "./harness.ts";
 import { mcp } from "./mcp.ts";
 import { _registerMcpHostRequest, McpIntegration, McpToolError, NotEnabled } from "./mcp_base.ts";
-import { emit, host_request, hostRequest, is_active, isActive, startReplLoop } from "./repl.ts";
+import { emit, is_active, isActive, op, startReplLoop } from "./repl.ts";
 
-_registerMcpHostRequest((requestType, payload) =>
-	host_request({ type: requestType, ...(payload ?? {}) }),
-);
+// The MCP bridge gets the unwrapped host result, not the raw reply envelope.
+_registerMcpHostRequest((requestType, payload) => op(requestType, payload));
+
+/** High-level host request: `(requestType, payload?)` → unwrapped result record. */
+export const host_request = op;
+export const hostRequest = op;
 
 export const _NOT_CALLABLE_MESSAGE =
 	"`rlm` is a namespace module, not a callable function. " +
@@ -118,6 +121,42 @@ export interface SpawnOptions {
 	[key: string]: unknown;
 }
 
+/** Spawn options the host rejects; passing any of them is a client-side error. */
+const UNSUPPORTED_SPAWN_KEYS = [
+	"cwd",
+	"worktree",
+	"background",
+	"bg",
+	"system_prompt",
+	"systemPrompt",
+	"skills",
+	"timeout",
+] as const;
+
+function _spawnKwargs(opts: SpawnOptions, { requiredName = false, allowCwd = false } = {}): Record<string, unknown> {
+	const name = opts.name ?? opts.role;
+	if (requiredName && (typeof name !== "string" || !name)) {
+		throw new Error("rlm.spawn requires a name (or role) that is unique among siblings");
+	}
+	const unsupported = UNSUPPORTED_SPAWN_KEYS.filter(
+		(key) => (allowCwd ? key !== "cwd" : true) && opts[key] !== undefined,
+	);
+	if (unsupported.length > 0) {
+		throw new Error(
+			`Only name, model, and thinking are passed to the host; remove unsupported options: ${unsupported
+				.sort()
+				.join(", ")}`,
+		);
+	}
+	const kwargs: Record<string, unknown> = {};
+	if (name !== undefined) kwargs.name = name;
+	if (opts.model !== undefined) kwargs.model = opts.model;
+	const thinking = opts.thinking_level ?? opts.thinkingLevel;
+	if (thinking !== undefined) kwargs.thinking = thinking;
+	if (allowCwd && opts.cwd !== undefined) kwargs.cwd = opts.cwd;
+	return kwargs;
+}
+
 export async function spawn(
 	promptOrOptions: string | SpawnOptions,
 	extraOptions: SpawnOptions = {},
@@ -126,59 +165,35 @@ export async function spawn(
 		typeof promptOrOptions === "string"
 			? { ...extraOptions, prompt: promptOrOptions }
 			: { ...promptOrOptions };
-
-	const reply = await host_request({
-		op: "rlm_spawn",
-		prompt: opts.prompt ?? opts.task ?? "",
-		name: opts.name ?? opts.role,
-		model: opts.model,
-		thinking_level: opts.thinking_level ?? opts.thinkingLevel,
-		cwd: opts.cwd,
-		worktree: opts.worktree,
-		background: opts.background ?? opts.bg ?? false,
-		system_prompt: opts.system_prompt ?? opts.systemPrompt,
-		skills: opts.skills,
-	});
-	if (reply.ok === false) {
-		throw new Error(String(reply.error ?? "rlm.spawn failed"));
+	const prompt = opts.prompt ?? opts.task;
+	if (typeof prompt !== "string" || !prompt.trim()) {
+		throw new Error("rlm.spawn requires a non-empty prompt");
 	}
-	return (reply.result as Record<string, unknown>) ?? reply;
+	return await op("rlm.run", { prompt, kwargs: _spawnKwargs(opts, { requiredName: true }) });
 }
 
 export async function create_session(options: SpawnOptions = {}): Promise<Record<string, unknown>> {
-	const reply = await host_request({
-		op: "rlm_create_session",
-		...options,
-	});
-	if (reply.ok === false) {
-		throw new Error(String(reply.error ?? "rlm.create_session failed"));
+	const prompt = options.prompt ?? options.task;
+	if (typeof prompt !== "string" || !prompt.trim()) {
+		throw new Error("rlm.create_session requires a non-empty prompt");
 	}
-	return (reply.result as Record<string, unknown>) ?? reply;
+	return await op("rlm.create_session", { prompt, kwargs: _spawnKwargs(options, { allowCwd: true }) });
 }
 
 export const createSession = create_session;
 
-export async function find_models(query = ""): Promise<unknown[]> {
-	const reply = await host_request({
-		op: "rlm_find_models",
-		query,
-	});
-	if (reply.ok === false) {
-		throw new Error(String(reply.error ?? "rlm.find_models failed"));
-	}
-	return (reply.models as unknown[]) ?? (reply.result as unknown[]) ?? [];
+export async function find_models(query = "", limit?: number): Promise<unknown[]> {
+	const payload: Record<string, unknown> = { query };
+	if (limit !== undefined) payload.limit = limit;
+	const result = await op("rlm.find_models", payload);
+	return (result.models as unknown[]) ?? [];
 }
 
 export const findModels = find_models;
 
 export async function list_subagents(): Promise<unknown[]> {
-	const reply = await host_request({
-		op: "rlm_list_subagents",
-	});
-	if (reply.ok === false) {
-		throw new Error(String(reply.error ?? "rlm.list_subagents failed"));
-	}
-	return (reply.subagents as unknown[]) ?? (reply.result as unknown[]) ?? [];
+	const result = await op("rlm.list_subagents", {});
+	return (result.subagents as unknown[]) ?? [];
 }
 
 export const listSubagents = list_subagents;
@@ -187,15 +202,10 @@ export async function collect(
 	targets?: unknown,
 	options: Record<string, unknown> = {},
 ): Promise<Record<string, unknown>> {
-	const reply = await host_request({
-		op: "rlm_collect",
-		targets,
-		...options,
-	});
-	if (reply.ok === false) {
-		throw new Error(String(reply.error ?? "rlm.collect failed"));
-	}
-	return (reply.result as Record<string, unknown>) ?? reply;
+	const payload: Record<string, unknown> = { targets };
+	const timeoutMs = options.timeout_ms ?? options.timeoutMs;
+	if (timeoutMs !== undefined) payload.timeout_ms = timeoutMs;
+	return await op("rlm.collect", payload);
 }
 
 export async function progress_note(text: string, metadata: Record<string, unknown> = {}): Promise<void> {
@@ -213,15 +223,8 @@ export async function progress_note(text: string, metadata: Record<string, unkno
 
 export const progressNote = progress_note;
 
-export async function delete_subagent(subagentId: string): Promise<Record<string, unknown>> {
-	const reply = await host_request({
-		op: "rlm_delete_subagent",
-		subagent_id: subagentId,
-	});
-	if (reply.ok === false) {
-		throw new Error(String(reply.error ?? "rlm.delete_subagent failed"));
-	}
-	return (reply.result as Record<string, unknown>) ?? reply;
+export async function delete_subagent(target: string): Promise<Record<string, unknown>> {
+	return await op("rlm.delete_subagent", { target });
 }
 
 export const deleteSubagent = delete_subagent;
@@ -289,8 +292,6 @@ export {
 	type HarnessScope,
 	HarnessState,
 	harness,
-	host_request,
-	hostRequest,
 	is_active,
 	isActive,
 	McpIntegration,

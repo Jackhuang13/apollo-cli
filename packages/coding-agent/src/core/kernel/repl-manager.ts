@@ -19,6 +19,7 @@ import { StringDecoder } from "node:string_decoder";
 import { v4 as uuid } from "uuid";
 import { spawnHidden } from "../../utils/child-process.js";
 import { reapKernelOrphanProcesses, recordOrphanProcessState } from "../orphan-process-journal.js";
+import { buildIScriptBootstrapCode, buildPythonBootstrapCode } from "../tools/iscript.js";
 import { ensureKernelPython } from "./bootstrap.js";
 import {
 	AGENT_MESSAGE_DISPLAY_MIME,
@@ -278,6 +279,24 @@ export class ReplKernelManager {
 		return this.options.sessionId;
 	}
 
+	/** Dialect of the spawned kernel runtime; set once in doStart() from the resolved runtime. */
+	private _interpreter: "script" | "python" = "script";
+
+	get interpreter(): "script" | "python" {
+		return this._interpreter;
+	}
+
+	/**
+	 * Runtime bootstrap code for this kernel's dialect. A caller-supplied
+	 * `bootstrapCode` (tests) wins over the dialect rebuild; repair paths call
+	 * this so a repaired kernel re-runs the correct dialect's bootstrap.
+	 */
+	buildBootstrapCode(): string {
+		if (typeof this.options.bootstrapCode === "string") return this.options.bootstrapCode;
+		const skills = this.options.pythonSkills ?? [];
+		return this.interpreter === "python" ? buildPythonBootstrapCode(skills) : buildIScriptBootstrapCode(skills);
+	}
+
 	get hasBackgroundWork(): boolean {
 		return this.backgroundBashHandles.size > 0;
 	}
@@ -384,6 +403,7 @@ export class ReplKernelManager {
 			...(this.options.cwd ? [path.resolve(this.options.cwd, "apollo-cli-runtime/src/rlm/mod.ts")] : []),
 		];
 		const resolvedRuntime = candidateRuntimes.find((p) => existsSync(p));
+		this._interpreter = resolvedRuntime ? "script" : "python";
 		if (resolvedRuntime) {
 			// Prefer node with --experimental-strip-types or deno for apollo-cli IScript runtime
 			if (python.endsWith("deno") || python.endsWith("deno.exe")) {
@@ -674,8 +694,9 @@ export class ReplKernelManager {
 
 		// Restore revives only the user namespace; live handles (rlm, bash, skills)
 		// come from the runtime bootstrap, so a repaired kernel must re-run it.
-		if (!this.options.bootstrapCode) return;
-		const bootstrapped = await this.bootstrapRepairedKernel(this.options.bootstrapCode);
+		const code = this.buildBootstrapCode();
+		if (!code) return;
+		const bootstrapped = await this.bootstrapRepairedKernel(code);
 		if (this.startStale(generation) || (this.state as string) !== "running") {
 			this.finishFailedProtocolRepair(owner);
 			return;
@@ -718,7 +739,7 @@ export class ReplKernelManager {
 	 * unprovisioned namespace.
 	 */
 	private async ensureKernelRebootstrapped(signal?: AbortSignal): Promise<void> {
-		const code = this.options.bootstrapCode;
+		const code = this.buildBootstrapCode();
 		const needsRestore = Boolean(this.options.snapshot) && this.pendingRestore;
 		const needsBootstrap = Boolean(code) && this.pendingRebootstrap;
 		// An in-flight repair owns its kernel's restore/bootstrap sequence, and

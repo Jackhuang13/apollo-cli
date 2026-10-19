@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as moduleBuiltin from "node:module";
 import * as os from "node:os";
@@ -86,39 +87,66 @@ interface PendingHostRequest {
 	timer?: ReturnType<typeof setTimeout>;
 }
 
-let _requestSeq = 0;
 const _pendingRequests = new Map<string, PendingHostRequest>();
+
+function _isPlainRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
 export function host_request(
 	payload: Record<string, unknown>,
 	timeout = 300.0,
 ): Promise<Record<string, unknown>> {
-	const cellId = _getActiveCellId();
-	if (cellId === null) {
-		return Promise.reject(new Error("host_request() called outside an active cell execution"));
-	}
-	_requestSeq += 1;
-	const requestId = `req-${_requestSeq}`;
-
+	const requestId = randomUUID().replaceAll("-", "");
 	return new Promise<Record<string, unknown>>((resolve, reject) => {
 		const entry: PendingHostRequest = { resolve, reject };
 		if (timeout > 0 && Number.isFinite(timeout)) {
 			entry.timer = setTimeout(() => {
 				_pendingRequests.delete(requestId);
-				reject(new Error(`Host request ${requestId} timed out after ${timeout}s`));
+				reject(new Error(`Host request timed out after ${timeout}s`));
 			}, timeout * 1000);
 		}
 		_pendingRequests.set(requestId, entry);
 		_sendProto({
-			id: cellId,
+			id: requestId,
 			event: "host_request",
-			request_id: requestId,
-			payload,
+			data: payload,
 		});
 	});
 }
 
 export const hostRequest = host_request;
+
+/** Reject every pending host request; a closed host can never answer again. */
+export function _failPendingHostRequests(): void {
+	for (const [requestId, entry] of [..._pendingRequests]) {
+		_pendingRequests.delete(requestId);
+		if (entry.timer) clearTimeout(entry.timer);
+		entry.reject(new Error("host connection closed; host_request cannot be answered"));
+	}
+}
+
+/**
+ * High-level typed host request: sends `{...payload, type: requestType}` and
+ * unwraps the reply envelope. `requestType` is written last so a payload
+ * `type` key cannot reroute the request. Mirrors the Python runtime's
+ * `rlm.host_request(request_type, payload)`.
+ */
+export async function op(
+	requestType: string,
+	payload: Record<string, unknown> | null | undefined = undefined,
+	timeout = 300.0,
+): Promise<Record<string, unknown>> {
+	const reply = await host_request({ ...(payload ?? {}), type: requestType }, timeout);
+	const status = reply.status;
+	if (status === "ok") {
+		return _isPlainRecord(reply.result) ? reply.result : {};
+	}
+	if (status === "error") {
+		throw new Error(String(reply.error ?? `host request ${requestType} failed`));
+	}
+	throw new Error(`host request ${requestType} returned unexpected status: ${String(status)}`);
+}
 
 export class CellExecution {
 	readonly cellId: string;
@@ -1345,12 +1373,12 @@ export async function startReplLoop(preloadGlobals?: Record<string, unknown>): P
 		const type = String(msg.type ?? "");
 
 		if (type === "host_reply") {
-			const reqId = String(msg.request_id ?? "");
-			const pending = _pendingRequests.get(reqId);
+			const reqId = typeof msg.id === "string" ? msg.id : "";
+			const pending = reqId ? _pendingRequests.get(reqId) : undefined;
 			if (pending) {
 				_pendingRequests.delete(reqId);
 				if (pending.timer) clearTimeout(pending.timer);
-				pending.resolve(msg);
+				pending.resolve(_isPlainRecord(msg.data) ? msg.data : {});
 			}
 			return;
 		}
@@ -1399,6 +1427,14 @@ export async function startReplLoop(preloadGlobals?: Record<string, unknown>): P
 	});
 
 	rl.on("close", () => {
-		shutdown();
+		const hadPending = _pendingRequests.size > 0;
+		_failPendingHostRequests();
+		if (hadPending) {
+			// Cells awaiting host requests need one beat to surface the
+			// rejection before the process exits.
+			setTimeout(shutdown, 25);
+		} else {
+			shutdown();
+		}
 	});
 }

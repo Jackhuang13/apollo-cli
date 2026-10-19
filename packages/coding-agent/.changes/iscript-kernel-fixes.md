@@ -1,0 +1,5 @@
+- Fixed the Python fallback kernel to start with a working REPL: the runtime globals (`rlm`, `mcp`, `bash`, `emit`, `host_request`) are now seeded and pre-installed Python skills are importable as globals instead of the kernel dying on a JavaScript bootstrap SyntaxError.
+- Fixed skill bootstrapping so default-export skills are callable as bare globals while named imports keep working.
+- Changed `host_request` to the two-argument high-level form; unknown or session-unavailable request types now fail fast with a clear error instead of hanging.
+- Changed the REPL doctrine prompt sections to appear based on the actually available REPL tools (`iscript`/`ipython`).
+- Rewrote the `agent_message` skill to the `host_request("agent_message.send", payload)` contract with a separate display-only helper.

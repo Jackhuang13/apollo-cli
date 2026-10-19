@@ -94,7 +94,7 @@ export function parseUnavailablePythonSkills(stdout: string): UnavailablePythonS
 
 export const parseUnavailableIScriptSkills = parseUnavailablePythonSkills;
 
-export function buildRlmBootstrapCode(pythonSkills: readonly PythonSkillRuntimeInfo[] = []): string {
+export function buildIScriptBootstrapCode(pythonSkills: readonly PythonSkillRuntimeInfo[] = []): string {
 	const baseCode = [RLM_BOOTSTRAP_HEADER_CODE, RLM_BOOTSTRAP_RUNTIME_CODE].join("\n\n");
 	const importNames = [...new Set(pythonSkills.map((skill) => skill.importName))];
 	if (importNames.length === 0) {
@@ -109,7 +109,18 @@ await (async () => {
     for (const skillName of ${JSON.stringify(importNames)}) {
         try {
             if (typeof globalThis.__apollo_import__ === "function") {
-                globalThis[skillName] = await globalThis.__apollo_import__(skillName);
+                const mod = await globalThis.__apollo_import__(skillName);
+                // ESM skills arrive as a module namespace; unwrap the default
+                // export so the bare global is callable, and merge any
+                // non-colliding named exports.
+                const fn = (mod && mod.default !== undefined) ? mod.default : mod;
+                globalThis[skillName] = fn;
+                if (mod && typeof mod === "object") {
+                    for (const [key, value] of Object.entries(mod)) {
+                        if (key === "default" || key === "__esModule") continue;
+                        if (!(key in globalThis)) globalThis[key] = value;
+                    }
+                }
             }
         } catch (err) {
             const errText = String(err?.message || err);
@@ -126,7 +137,53 @@ await (async () => {
 `.trim();
 }
 
-export const buildIScriptBootstrapCode = buildRlmBootstrapCode;
+/** Alias for {@link buildIScriptBootstrapCode}; kept for existing call sites. */
+export const buildRlmBootstrapCode = buildIScriptBootstrapCode;
+
+/**
+ * Bootstrap for the Python fallback kernel. The Python runtime starts with an
+ * empty cell namespace, so this seeds the runtime globals (rlm, mcp, bash,
+ * emit, host_request) and imports every pre-installed skill module into the
+ * namespace, printing the shared failure marker for any import that fails.
+ */
+export function buildPythonBootstrapCode(pythonSkills: readonly PythonSkillRuntimeInfo[] = []): string {
+	const importNames = [...new Set(pythonSkills.map((skill) => skill.importName))];
+	const skillLoop =
+		importNames.length === 0
+			? ""
+			: `
+_skill_import_errors = {}
+for _skill_name in ${JSON.stringify(importNames)}:
+    try:
+        globals()[_skill_name] = _bootstrap_importlib.import_module(_skill_name)
+    except Exception as _skill_err:
+        _skill_import_errors[_skill_name] = str(_skill_err)
+        globals()[_skill_name] = _bootstrap_unavailable(_skill_name, str(_skill_err))
+if _skill_import_errors:
+    print("${PYTHON_SKILL_IMPORT_ERROR_REPORT_MARKER}" + _bootstrap_json.dumps(_skill_import_errors))
+`.trim();
+
+	return `
+import importlib as _bootstrap_importlib
+import json as _bootstrap_json
+
+import rlm as _bootstrap_rlm
+import rlm.mcp as _bootstrap_mcp
+
+def _bootstrap_unavailable(name, error_text):
+    class _Unavailable:
+        def __getattr__(self, _attr):
+            raise AttributeError(f"Skill {name!r} is unavailable in this kernel: {error_text}")
+    return _Unavailable()
+
+globals().setdefault("rlm", _bootstrap_rlm)
+globals().setdefault("mcp", _bootstrap_mcp)
+globals().setdefault("bash", _bootstrap_rlm.bash)
+globals().setdefault("emit", _bootstrap_rlm.emit)
+globals().setdefault("host_request", _bootstrap_rlm.host_request)
+${skillLoop}
+`.trim();
+}
 
 export const iscriptSchema = Type.Object({
 	code: Type.String({
@@ -464,7 +521,6 @@ export class IScriptKernelProvisioner {
 			// without bash, where the runtime's teaching error fires instead).
 			const shellPath = resolveKernelBashShell(this.options?.shellPath);
 			const commandPrefix = this.options?.commandPrefix;
-			const bootstrapCode = buildRlmBootstrapCode(this.options?.pythonSkills);
 			const m = new ReplKernelManager({
 				python: this.options?.python,
 				cwd: this.cwd,
@@ -483,7 +539,6 @@ export class IScriptKernelProvisioner {
 					? { path: snapshotPathIn(snapshotDir), manifestPath: manifestPathIn(snapshotDir) }
 					: undefined,
 				stderrLogPath: snapshotDir ? join(snapshotDir, "kernel-stderr.log") : undefined,
-				bootstrapCode,
 			});
 			let pendingRestore: RestoreResult | undefined;
 			let snapshotExisted = false;
@@ -515,6 +570,9 @@ export class IScriptKernelProvisioner {
 					}
 				}
 				this.emitStartupProgress("Preparing Python runtime...");
+				// Built after start so it matches the kernel's actual dialect (the TS
+				// runtime is preferred when resolvable; otherwise the Python fallback).
+				const bootstrapCode = m.buildBootstrapCode();
 				const bootstrap = await m.execute(bootstrapCode, {
 					signal: startupSignal,
 				});
