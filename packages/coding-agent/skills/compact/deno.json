@@ -1,0 +1,5 @@
+{
+	"name": "@apollo/skill-compact",
+	"version": "0.1.0",
+	"exports": "./src/compact/mod.ts"
+}

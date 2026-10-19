@@ -1,0 +1,5 @@
+{
+	"name": "@apollo/skill-pdf",
+	"version": "0.1.0",
+	"exports": "./src/pdf/mod.ts"
+}

@@ -1,0 +1,5 @@
+{
+	"name": "@apollo/skill-skill-creator",
+	"version": "0.1.0",
+	"exports": "./src/skill_creator/mod.ts"
+}

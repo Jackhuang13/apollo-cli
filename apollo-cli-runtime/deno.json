@@ -1,0 +1,32 @@
+{
+	"name": "@apollo-cli/runtime",
+	"version": "0.1.0",
+	"exports": {
+		".": "./src/rlm/mod.ts",
+		"./repl": "./src/rlm/repl.ts",
+		"./bash": "./src/rlm/bash.ts",
+		"./harness": "./src/rlm/harness.ts",
+		"./mcp": "./src/rlm/mcp.ts",
+		"./mcp-base": "./src/rlm/mcp_base.ts",
+		"./skill": "./src/rlm/skill.ts"
+	},
+	"imports": {
+		"rlm": "./src/rlm/mod.ts",
+		"rlm/repl": "./src/rlm/repl.ts",
+		"rlm/bash": "./src/rlm/bash.ts",
+		"rlm/harness": "./src/rlm/harness.ts",
+		"rlm/mcp": "./src/rlm/mcp.ts",
+		"rlm/mcp_base": "./src/rlm/mcp_base.ts",
+		"rlm/skill": "./src/rlm/skill.ts",
+		"apollo-cli-runtime": "./src/rlm/mod.ts",
+		"apollo-cli-runtime/repl": "./src/rlm/repl.ts",
+		"apollo-cli-runtime/bash": "./src/rlm/bash.ts",
+		"apollo-cli-runtime/harness": "./src/rlm/harness.ts",
+		"apollo-cli-runtime/mcp": "./src/rlm/mcp.ts",
+		"apollo-cli-runtime/mcp_base": "./src/rlm/mcp_base.ts",
+		"apollo-cli-runtime/skill": "./src/rlm/skill.ts"
+	},
+	"compilerOptions": {
+		"strict": true
+	}
+}

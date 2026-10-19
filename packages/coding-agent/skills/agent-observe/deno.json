@@ -1,0 +1,5 @@
+{
+	"name": "@apollo/skill-agent-observe",
+	"version": "0.1.0",
+	"exports": "./src/agent_observe/mod.ts"
+}

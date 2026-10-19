@@ -1,0 +1,23 @@
+{
+	"name": "apollo-cli-runtime",
+	"version": "0.1.0",
+	"description": "Deno/Node-compatible TypeScript IScript REPL runtime for Apollo CLI",
+	"type": "module",
+	"main": "./src/rlm/index.ts",
+	"exports": {
+		".": "./src/rlm/index.ts",
+		"./mod": "./src/rlm/mod.ts",
+		"./repl": "./src/rlm/repl.ts",
+		"./bash": "./src/rlm/bash.ts",
+		"./harness": "./src/rlm/harness.ts",
+		"./mcp": "./src/rlm/mcp.ts",
+		"./mcp_base": "./src/rlm/mcp_base.ts",
+		"./skill": "./src/rlm/skill.ts"
+	},
+	"bin": {
+		"apollo-cli-repl": "./src/rlm/repl.ts"
+	},
+	"engines": {
+		"node": ">=22.8.0"
+	}
+}

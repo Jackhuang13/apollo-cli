@@ -1,0 +1,85 @@
+/* apollo.tcss - Apollo CLI Textual CSS Stylesheet */
+
+InteractiveScreen {
+    layout: vertical;
+    background: $background;
+    color: $text;
+}
+
+AgentsViewScreen {
+    layout: vertical;
+    background: $background;
+    color: $text;
+}
+
+#top-bar {
+    dock: top;
+    height: 1;
+    background: $surface;
+    color: $text-muted;
+    border-bottom: solid $border;
+}
+
+#transcript-scroll {
+    layout: vertical;
+    height: 1fr;
+    overflow-y: auto;
+    padding: 0 1;
+}
+
+#dock-bottom {
+    dock: bottom;
+    layout: vertical;
+    background: $background;
+}
+
+#editor-container {
+    height: auto;
+    min-height: 3;
+    max-height: 15;
+    border: round $border;
+    padding: 0 1;
+}
+
+#editor-container:focus-within {
+    border: round $primary;
+}
+
+#footer {
+    height: 1;
+    background: $surface;
+    color: $text-muted;
+}
+
+IScriptCellWidget {
+    layout: vertical;
+    margin: 1 0;
+    padding: 0 1;
+    border: round $border-muted;
+}
+
+IScriptCellWidget.running {
+    border: round $accent;
+}
+
+IScriptCellWidget.success {
+    border: round $success;
+}
+
+IScriptCellWidget.error {
+    border: round $error;
+}
+
+ModalScreen {
+    layout: vertical;
+    content-align: center middle;
+    background: rgba(0, 0, 0, 0.7);
+}
+
+.modal-dialog {
+    width: 60;
+    height: auto;
+    padding: 1 2;
+    background: $surface;
+    border: round $primary;
+}
