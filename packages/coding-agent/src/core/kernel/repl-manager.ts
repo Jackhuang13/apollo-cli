@@ -20,7 +20,7 @@ import { v4 as uuid } from "uuid";
 import { spawnHidden } from "../../utils/child-process.js";
 import { reapKernelOrphanProcesses, recordOrphanProcessState } from "../orphan-process-journal.js";
 import { buildIScriptBootstrapCode, buildPythonBootstrapCode } from "../tools/iscript.js";
-import { ensureKernelPython } from "./bootstrap.js";
+import { ensureKernelPython, tsRuntimeCandidateDirs } from "./bootstrap.js";
 import {
 	AGENT_MESSAGE_DISPLAY_MIME,
 	ATTACHMENT_DISPLAY_MIME,
@@ -373,46 +373,63 @@ export class ReplKernelManager {
 		// handlers can dispose a kernel that is still booting.
 		liveKernels.add(this);
 
-		let python: string;
-		try {
-			python =
-				this.options.python ??
-				(await ensureKernelPython({
-					pythonSkills: this.options.pythonSkills,
-					onProgress: startOptions.onBootstrapProgress,
-				}));
-			if (this.startStale(generation)) throw new Error("Kernel start superseded");
-			this.options.python = python;
-		} catch (error) {
-			if (this.startStale(generation)) throw error; // never touch a newer start's state
-			liveKernels.delete(this);
-			if ((this.state as string) !== "shutdown") this.state = "idle";
-			throw error;
-		}
+		// Resolve the in-package TS runtime before any Python provisioning: when it
+		// resolves, the uv/venv bootstrap (ensureKernelPython) never runs at all.
+		// An explicitly configured interpreter (option or env) selects the Python
+		// branch instead: the user's override wins over the TS default. A deno-named
+		// interpreter still runs the TS runtime.
+		const configured = this.options.python ?? process.env.APOLLO_KERNEL_DENO ?? process.env.PRIME_AGENT_KERNEL_PYTHON;
+		const forcesPython =
+			typeof configured === "string" && !configured.endsWith("deno") && !configured.endsWith("deno.exe");
+		const candidateRuntimes = forcesPython
+			? []
+			: [
+					path.resolve("apollo-cli-runtime/src/rlm/mod.ts"),
+					path.resolve("../apollo-cli-runtime/src/rlm/mod.ts"),
+					path.resolve("../../apollo-cli-runtime/src/rlm/mod.ts"),
+					...(this.options.cwd ? [path.resolve(this.options.cwd, "apollo-cli-runtime/src/rlm/mod.ts")] : []),
+					// Package-relative: an installed dist layout resolves from the package
+					// directory, not from the cwd.
+					...tsRuntimeCandidateDirs().map((dir) => path.join(dir, "src", "rlm", "mod.ts")),
+				];
+		const resolvedRuntime = candidateRuntimes.find((p) => existsSync(p));
+		this._interpreter = resolvedRuntime ? "script" : "python";
 
 		if ((this.state as string) === "shutdown") {
 			throw new Error("Kernel was disposed during startup");
 		}
 
-		let spawnCmd = python;
-		let spawnArgs = ["-m", "rlm.repl"];
-		const candidateRuntimes = [
-			path.resolve("apollo-cli-runtime/src/rlm/mod.ts"),
-			path.resolve("../apollo-cli-runtime/src/rlm/mod.ts"),
-			path.resolve("../../apollo-cli-runtime/src/rlm/mod.ts"),
-			...(this.options.cwd ? [path.resolve(this.options.cwd, "apollo-cli-runtime/src/rlm/mod.ts")] : []),
-		];
-		const resolvedRuntime = candidateRuntimes.find((p) => existsSync(p));
-		this._interpreter = resolvedRuntime ? "script" : "python";
+		let spawnCmd: string;
+		let spawnArgs: string[];
 		if (resolvedRuntime) {
-			// Prefer node with --experimental-strip-types or deno for apollo-cli IScript runtime
-			if (python.endsWith("deno") || python.endsWith("deno.exe")) {
-				spawnCmd = python;
+			// A deno-named configured interpreter runs the TS runtime; otherwise node
+			// with --experimental-strip-types.
+			if (typeof configured === "string" && (configured.endsWith("deno") || configured.endsWith("deno.exe"))) {
+				spawnCmd = configured;
 				spawnArgs = ["run", "-A", "--unstable-kv", resolvedRuntime];
 			} else {
 				spawnCmd = process.execPath;
 				spawnArgs = ["--experimental-strip-types", resolvedRuntime];
 			}
+		} else {
+			let python: string;
+			try {
+				python =
+					this.options.python ??
+					(await ensureKernelPython({
+						pythonSkills: this.options.pythonSkills,
+						onProgress: startOptions.onBootstrapProgress,
+					}));
+				if (this.startStale(generation)) throw new Error("Kernel start superseded");
+				this.options.python = python;
+			} catch (error) {
+				if (this.startStale(generation)) throw error; // never touch a newer start's state
+				liveKernels.delete(this);
+				if ((this.state as string) !== "shutdown") this.state = "idle";
+				throw error;
+			}
+			spawnCmd = python;
+			spawnArgs = ["-m", "rlm.repl"];
 		}
 
 		const child = spawnHidden(spawnCmd, spawnArgs, {

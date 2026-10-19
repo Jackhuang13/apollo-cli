@@ -122,6 +122,9 @@ describe("repl kernel parent watchdog", () => {
 	it("a stale doStart resumed after a concurrent teardown never touches the new kernel", async () => {
 		const journalPath = join(tempDir, "orphans.jsonl");
 		process.env[ORPHAN_PROCESS_JOURNAL_ENV] = journalPath;
+		// Force the Python branch so doStart reaches ensureKernelPython (a resolvable
+		// TS runtime would otherwise take the TS branch first and never call it).
+		vi.stubEnv("PRIME_AGENT_KERNEL_PYTHON", join(tempDir, "python"));
 		let resolvePython: (python: string) => void = () => {};
 		ensureKernelPythonMock.mockReturnValue(
 			new Promise<string>((resolve) => {
@@ -158,6 +161,7 @@ describe("repl kernel parent watchdog", () => {
 			const records = existsSync(journalPath) ? readJournalRecords(journalPath) : [];
 			expect(records.some((r) => r.pid === childB.pid)).toBe(false);
 		} finally {
+			vi.unstubAllEnvs();
 			internals.child = undefined;
 			internals.state = "idle";
 			await manager.shutdown({ snapshot: true, drainHostRequests: true });

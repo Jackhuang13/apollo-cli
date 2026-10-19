@@ -1,11 +1,11 @@
 ---
 name: pptx
-description: Inspect, extract, and generate PowerPoint (.pptx) presentations from the TypeScript REPL (`import { pptx } from "pptx"`).
+description: Inspect the metadata of PowerPoint (.pptx) presentations (path, size, existence) from the TypeScript REPL (`import { pptx } from "pptx"`).
 ---
 
 # `pptx` — PowerPoint Presentation Workflows
 
-Inspect, extract, and generate `.pptx` presentations from the TypeScript REPL.
+Inspect `.pptx` presentations (metadata only) from the TypeScript REPL.
 
 ## Import
 

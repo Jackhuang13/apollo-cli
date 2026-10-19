@@ -1,11 +1,11 @@
 ---
 name: pdf
-description: Extract text, tables, and metadata from PDF files or generate PDF documents from the TypeScript REPL (`import { pdf } from "pdf"`).
+description: Inspect the metadata of PDF files (path, size, existence) from the TypeScript REPL (`import { pdf } from "pdf"`).
 ---
 
 # `pdf` — PDF Document Workflows
 
-Inspect, extract, and generate `.pdf` files from the TypeScript REPL.
+Inspect `.pdf` files (metadata only) from the TypeScript REPL.
 
 ## Import
 

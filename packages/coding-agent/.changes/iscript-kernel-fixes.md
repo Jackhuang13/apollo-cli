@@ -3,3 +3,6 @@
 - Changed `host_request` to the two-argument high-level form; unknown or session-unavailable request types now fail fast with a clear error instead of hanging.
 - Changed the REPL doctrine prompt sections to appear based on the actually available REPL tools (`iscript`/`ipython`).
 - Rewrote the `agent_message` skill to the `host_request("agent_message.send", payload)` contract with a separate display-only helper.
+- Fixed installed builds to start the TS (IScript) kernel directly: the runtime now ships inside the package and resolves from the installed layout without Python/uv bootstrapping; `ensureKernelPython` only runs when a Python interpreter is actually selected.
+- Made an explicitly configured interpreter (env or option) deterministically select the Python kernel branch.
+- Downgraded the `docx`, `xlsx`, `pdf`, and `pptx` skills to metadata-only inspection, matching their stub implementations.

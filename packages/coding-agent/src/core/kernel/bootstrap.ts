@@ -744,25 +744,41 @@ async function writeMergedBootstrapVersion(
 	await writeBootstrapVersion(venv, runtimeIdentity, [...merged.values()]);
 }
 
-function runtimeCandidateDirs(): string[] {
+export type RuntimeSourceKind = "python" | "script";
+
+function runtimeCandidateDirs(kind: RuntimeSourceKind): string[] {
 	const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 	// Compiled executables use a flat sidecar layout; Node packages keep sources in dist/.
 	// Resolve both from the physical package directory, outside Bun's virtual filesystem.
+	if (kind === "python") {
+		return [
+			path.join(getPackageDir(), "prime-agent-runtime"),
+			path.join(getPackageDir(), "dist", "prime-agent-runtime"),
+			path.resolve(moduleDir, "..", "..", "prime-agent-runtime"),
+			path.resolve(moduleDir, "..", "..", "..", "..", "..", "prime-agent-runtime"),
+		];
+	}
+	// In-package TS (IScript) runtime candidates, package-relative so an installed
+	// dist layout resolves without any repo-relative cwd.
 	return [
 		path.join(getPackageDir(), "apollo-cli-runtime"),
 		path.join(getPackageDir(), "dist", "apollo-cli-runtime"),
 		path.resolve(moduleDir, "..", "..", "..", "..", "apollo-cli-runtime"),
 		path.resolve(moduleDir, "..", "..", "apollo-cli-runtime"),
-		path.join(getPackageDir(), "prime-agent-runtime"),
-		path.join(getPackageDir(), "dist", "prime-agent-runtime"),
-		path.resolve(moduleDir, "..", "..", "prime-agent-runtime"),
-		path.resolve(moduleDir, "..", "..", "..", "..", "..", "prime-agent-runtime"),
 	];
 }
 
-async function resolveRuntimeSourceDir(): Promise<string | null> {
-	for (const candidate of runtimeCandidateDirs()) {
-		if (await exists(path.join(candidate, "pyproject.toml"))) {
+/** In-package TS runtime candidate dirs, package-relative so an installed layout resolves from the package dir. */
+export function tsRuntimeCandidateDirs(): string[] {
+	return runtimeCandidateDirs("script");
+}
+
+// First candidate carrying the kind's marker: the Python runtime keys on
+// pyproject.toml, the TS runtime on its entry module (it ships no pyproject).
+export async function resolveRuntimeSourceDir(kind: RuntimeSourceKind): Promise<string | null> {
+	const marker = kind === "python" ? "pyproject.toml" : path.join("src", "rlm", "mod.ts");
+	for (const candidate of runtimeCandidateDirs(kind)) {
+		if (await exists(path.join(candidate, marker))) {
 			return candidate;
 		}
 	}
@@ -774,7 +790,7 @@ async function resolveRuntimeSourceDir(): Promise<string | null> {
 // dependency change invalidates an existing venv automatically. Falls back to the
 // bare package name when the runtime resolves to a registry install (no local source).
 export async function resolveRuntimeIdentity(): Promise<string> {
-	const sourceDir = await resolveRuntimeSourceDir();
+	const sourceDir = await resolveRuntimeSourceDir("python");
 	if (!sourceDir) return RUNTIME_REQUIREMENT;
 	return hashRuntimeSource(sourceDir);
 }
@@ -820,7 +836,7 @@ async function bootstrapVenv(
 	await mkdir(path.dirname(venv), { recursive: true });
 	const uv = await ensureUv(options);
 	const python = kernelVenvPython(venv);
-	const sourceDir = await resolveRuntimeSourceDir();
+	const sourceDir = await resolveRuntimeSourceDir("python");
 	const runtimeRequirement = sourceDir ?? RUNTIME_REQUIREMENT;
 	const runtimeIdentity = await resolveRuntimeIdentity();
 

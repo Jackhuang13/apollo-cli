@@ -1,9 +1,16 @@
 import { type ChildProcessWithoutNullStreams, spawn as spawnChild } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { ensureKernelPython, resolveRuntimeSourceDir } from "../../src/core/kernel/bootstrap.js";
 import { ReplKernelManager } from "../../src/core/kernel/index.js";
+
+vi.mock("../../src/core/kernel/bootstrap.js", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../../src/core/kernel/bootstrap.js")>()),
+	ensureKernelPython: vi.fn().mockRejectedValue(new Error("TS kernel must not trigger Python provisioning")),
+}));
+
 import { buildIScriptBootstrapCode, PYTHON_SKILL_IMPORT_ERROR_REPORT_MARKER } from "../../src/core/tools/iscript.js";
 import { resolveKernelBashShell } from "../../src/utils/shell.js";
 
@@ -269,17 +276,26 @@ describe("host_request round-trip (real TS runtime, scripted host)", () => {
 	});
 
 	it("closes host stdin rejects every pending host request", async () => {
-		host.send({
-			type: "execute",
-			id: "rt-close",
-			code: 'await host_request("test.noreply", undefined, 300); "unreachable"',
-		});
-		await host.waitFrame((candidate) => candidate.event === "host_request");
-		host.closeStdin();
-		const error = await host.waitFrame((candidate) => candidate.event === "error" && candidate.id === "rt-close");
-		expect(String(error.evalue)).toContain("host connection closed");
-		const code = await host.exit();
-		expect(code).toBe(0);
+		// Dedicated child: closing stdin exits the runtime, which would break tests
+		// running after this one under shuffling.
+		const closeHost = new RuntimeHost();
+		await closeHost.start();
+		try {
+			closeHost.send({
+				type: "execute",
+				id: "rt-close",
+				code: 'await host_request("test.noreply", undefined, 300); "unreachable"',
+			});
+			await closeHost.waitFrame((candidate) => candidate.event === "host_request");
+			closeHost.closeStdin();
+			const error = await closeHost.waitFrame(
+				(candidate) => candidate.event === "error" && candidate.id === "rt-close",
+			);
+			expect(String(error.evalue)).toContain("host connection closed");
+			expect(await closeHost.exit()).toBe(0);
+		} finally {
+			closeHost.dispose();
+		}
 	});
 });
 
@@ -349,6 +365,8 @@ describe("interpreter bootstrap dialects (AC-14, AC-15, AC-20, AC-21)", () => {
 	it("Python fallback kernel from an external cwd runs the Python bootstrap without a JS SyntaxError", async () => {
 		const tempDir = mkdtempSync(join(tmpdir(), "apollo-py-kernel-"));
 		const previousCwd = process.cwd();
+		// An empty package dir keeps a built dist runtime from shadowing this Python fallback.
+		vi.stubEnv("PI_PACKAGE_DIR", tempDir);
 		process.chdir(tempDir);
 		let manager: ReplKernelManager | undefined;
 		try {
@@ -378,6 +396,7 @@ describe("interpreter bootstrap dialects (AC-14, AC-15, AC-20, AC-21)", () => {
 			expect(missing.error?.evalue).toContain("unavailable in this kernel");
 		} finally {
 			process.chdir(previousCwd);
+			vi.unstubAllEnvs();
 			try {
 				await manager?.kill();
 			} finally {
@@ -394,5 +413,44 @@ describe("interpreter bootstrap dialects (AC-14, AC-15, AC-20, AC-21)", () => {
 		expect(overridden.buildBootstrapCode()).toBe("boot-code");
 		manager.disposeSync();
 		overridden.disposeSync();
+	});
+});
+
+describe("package-relative TS runtime resolution (AC-40, AC-41, AC-42)", () => {
+	it("installed dist layout starts a TS kernel from a non-repo cwd without uv/venv work (AC-40, AC-41)", async () => {
+		const packageDir = mkdtempSync(join(tmpdir(), "apollo-installed-pkg-"));
+		const workCwd = mkdtempSync(join(tmpdir(), "apollo-installed-cwd-"));
+		cpSync(resolve(RUNTIME_PATH!, "..", "..", ".."), join(packageDir, "dist", "apollo-cli-runtime"), {
+			recursive: true,
+		});
+		const previousCwd = process.cwd();
+		// No configured interpreter: the in-package TS runtime must be the default.
+		vi.stubEnv("PI_PACKAGE_DIR", packageDir);
+		vi.stubEnv("APOLLO_KERNEL_DENO", undefined);
+		vi.stubEnv("PRIME_AGENT_KERNEL_PYTHON", undefined);
+		process.chdir(workCwd);
+		const ensureSpy = vi.mocked(ensureKernelPython);
+		let manager: ReplKernelManager | undefined;
+		try {
+			manager = new ReplKernelManager({ cwd: workCwd });
+			await manager.start();
+			expect(manager.interpreter).toBe("script");
+			expect(ensureSpy).not.toHaveBeenCalled();
+			const result = await manager.execute("console.log(1 + 1)");
+			expect(result.status).toBe("ok");
+			expect(result.stdout).toContain("2");
+			// AC-42: the script kind matches the in-package candidate, the python kind does not.
+			expect(await resolveRuntimeSourceDir("script")).toBe(join(packageDir, "dist", "apollo-cli-runtime"));
+			expect(await resolveRuntimeSourceDir("python")).not.toBe(join(packageDir, "dist", "apollo-cli-runtime"));
+		} finally {
+			process.chdir(previousCwd);
+			vi.unstubAllEnvs();
+			try {
+				await manager?.kill();
+			} finally {
+				manager?.disposeSync();
+				for (const dir of [packageDir, workCwd]) rmSync(dir, { recursive: true, force: true });
+			}
+		}
 	});
 });

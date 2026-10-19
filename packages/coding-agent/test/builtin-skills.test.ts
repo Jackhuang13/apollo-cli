@@ -119,6 +119,7 @@ describe("builtin skills", () => {
 				scripts?: Record<string, string>;
 			};
 			expect(pkg.scripts?.["copy-assets"]).toContain("skills dist/skills");
+			expect(pkg.scripts?.["copy-assets"]).toContain("dist/apollo-cli-runtime");
 			// npm publish ships the source skills/ dir via the files allowlist too.
 			expect(pkg.files).toContain("skills");
 		});

@@ -1,11 +1,11 @@
 ---
 name: docx
-description: Read, create, and edit Word (.docx) documents from the TypeScript REPL (`import { docx } from "docx"`).
+description: Inspect the metadata of Word (.docx) documents (path, size, existence) from the TypeScript REPL (`import { docx } from "docx"`).
 ---
 
 # `docx` — Word Document Workflows
 
-Inspect, extract, and generate `.docx` documents from the TypeScript REPL.
+Inspect `.docx` documents (metadata only) from the TypeScript REPL.
 
 ## Import
 
