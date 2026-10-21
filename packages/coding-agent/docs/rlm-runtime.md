@@ -1,5 +1,7 @@
 # RLM Runtime Architecture
 
+> **Fork note.** This page describes the Python kernel path, which is what installed releases run. A source checkout of this fork resolves to the TypeScript **IScript** runtime instead, and the two runtimes differ in snapshot format and — currently — in the `host_request` wire shape (P0). See [IScript Kernel](iscript-kernel.md) for the full picture and the open gaps.
+
 Prime Agent gives each agent session a persistent Python REPL kernel and a native recursive sub-agent interface. The Python `rlm` package is a model-facing shim; the TypeScript host owns child execution, persistence, usage accounting, and lifecycle.
 
 ## Architecture

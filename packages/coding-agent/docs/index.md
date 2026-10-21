@@ -52,6 +52,7 @@ Public releases are currently installed from versioned release artifacts. The in
 - [RPC mode](rpc.md) - integrate over stdin/stdout JSONL.
 - [JSON event stream mode](json.md) - print mode with structured events.
 - [TUI components](tui.md) - build custom terminal UI for extensions.
+- [Textual TUI framework](textual-tui.md) - the Textual-style framework layer in the TUI package: widgets, CSS, bindings, and how to extend it.
 
 ## Reference
 
@@ -73,3 +74,4 @@ Public releases are currently installed from versioned release artifacts. The in
 - [Daemon Architecture](daemon.md) - supervisor, catalog, worker, lifecycle, and recovery details.
 - [Agent Connection Architecture](agent-connection.md) - client/runtime connection boundary.
 - [RLM Runtime Architecture](rlm-runtime.md) - stdio kernel transport and recursive subagent execution.
+- [IScript Kernel](iscript-kernel.md) - the dual-runtime REPL kernel: protocol, runtime dispatch, snapshots, and known integration gaps.
