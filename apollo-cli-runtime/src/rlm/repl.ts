@@ -52,6 +52,10 @@ let _protoWrite: (line: string) => void = (line: string) => {
 	fs.writeSync(1, `${line}\n`);
 };
 
+export function _setProtoWriter(writer: (line: string) => void): void {
+	_protoWrite = writer;
+}
+
 function _sendProto(payload: Record<string, unknown>): void {
 	const line = JSON.stringify(payload);
 	_protoWrite(line);
@@ -126,6 +130,12 @@ export function _failPendingHostRequests(): void {
 	}
 }
 
+let _hostReplyResolver: ((type: string, payload: Record<string, unknown> | null | undefined) => Promise<Record<string, unknown>>) | null = null;
+
+export function _setHostReplyResolver(resolver: ((type: string, payload: Record<string, unknown> | null | undefined) => Promise<Record<string, unknown>>) | null): void {
+	_hostReplyResolver = resolver;
+}
+
 /**
  * High-level typed host request: sends `{...payload, type: requestType}` and
  * unwraps the reply envelope. `requestType` is written last so a payload
@@ -137,6 +147,9 @@ export async function op(
 	payload: Record<string, unknown> | null | undefined = undefined,
 	timeout = 300.0,
 ): Promise<Record<string, unknown>> {
+	if (_hostReplyResolver) {
+		return await _hostReplyResolver(requestType, payload);
+	}
 	const reply = await host_request({ ...(payload ?? {}), type: requestType }, timeout);
 	const status = reply.status;
 	if (status === "ok") {
