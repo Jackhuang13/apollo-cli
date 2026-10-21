@@ -80,7 +80,7 @@ test("subagent and model APIs unpack host response shapes correctly", async () =
 	});
 
 	try {
-		const session = await create_session({ prompt: "do research", name: "researcher" });
+		const session = await create_session("do research", "researcher");
 		assert.equal(session.active_session_id, "active-root");
 		assert.equal(session.name, "researcher");
 
@@ -95,6 +95,41 @@ test("subagent and model APIs unpack host response shapes correctly", async () =
 
 		const delResult = await delete_subagent("worker");
 		assert.equal(delResult.deleted, "worker");
+	} finally {
+		repl._setHostReplyResolver(null);
+	}
+});
+
+test("spawn and create_session support both string positional and object parameter signatures", async () => {
+	let lastReqType = "";
+	let lastPayload: any = null;
+	repl._setHostReplyResolver(async (requestType: string, payload?: any) => {
+		lastReqType = requestType;
+		lastPayload = payload;
+		if (requestType === "rlm.run") {
+			return { rlm_child_id: "c-1", name: payload?.kwargs?.name };
+		}
+		if (requestType === "rlm.create_session") {
+			return { session_id: "s-1", name: payload?.kwargs?.name };
+		}
+		return {};
+	});
+
+	try {
+		// spawn with positional args
+		const sp1 = await spawn("task 1", "worker-1");
+		assert.equal(sp1.rlm_child_id, "c-1");
+		assert.equal(lastPayload?.kwargs?.name, "worker-1");
+
+		// spawn with positional prompt and options
+		const sp2 = await spawn("task 2", { name: "worker-2", model: "m-test" });
+		assert.equal(lastPayload?.kwargs?.name, "worker-2");
+		assert.equal(lastPayload?.kwargs?.model, "m-test");
+
+		// create_session with positional args
+		const cs1 = await create_session("session task", "lead");
+		assert.equal(cs1.session_id, "s-1");
+		assert.equal(lastPayload?.kwargs?.name, "lead");
 	} finally {
 		repl._setHostReplyResolver(null);
 	}

@@ -49,6 +49,19 @@ export interface ViewOptions {
 	maxLines?: number;
 }
 
+/** Convenience helper: read a file's content as a UTF-8 string. */
+export function read(filePath: string, encoding: BufferEncoding = "utf8"): string {
+	const resolved = path.resolve(process.cwd(), filePath);
+	return fs.readFileSync(resolved, encoding);
+}
+
+/** Convenience helper: write data to a file (creates parent dirs if needed). */
+export function write(filePath: string, data: string | NodeJS.ArrayBufferView): void {
+	const resolved = path.resolve(process.cwd(), filePath);
+	fs.mkdirSync(path.dirname(resolved), { recursive: true });
+	fs.writeFileSync(resolved, data);
+}
+
 export function view(
 	filePath: string,
 	options: ViewOptions | number = {},
@@ -159,12 +172,18 @@ function _spawnKwargs(opts: SpawnOptions, { requiredName = false, allowCwd = fal
 
 export async function spawn(
 	promptOrOptions: string | SpawnOptions,
-	extraOptions: SpawnOptions = {},
+	extraOptionsOrName?: SpawnOptions | string,
 ): Promise<Record<string, unknown>> {
-	const opts: SpawnOptions =
-		typeof promptOrOptions === "string"
-			? { ...extraOptions, prompt: promptOrOptions }
-			: { ...promptOrOptions };
+	let opts: SpawnOptions;
+	if (typeof promptOrOptions === "string") {
+		if (typeof extraOptionsOrName === "string") {
+			opts = { prompt: promptOrOptions, name: extraOptionsOrName };
+		} else {
+			opts = { prompt: promptOrOptions, ...(extraOptionsOrName ?? {}) };
+		}
+	} else {
+		opts = { ...promptOrOptions };
+	}
 	const prompt = opts.prompt ?? opts.task;
 	if (typeof prompt !== "string" || !prompt.trim()) {
 		throw new Error("rlm.spawn requires a non-empty prompt");
@@ -172,12 +191,25 @@ export async function spawn(
 	return await op("rlm.run", { prompt, kwargs: _spawnKwargs(opts, { requiredName: true }) });
 }
 
-export async function create_session(options: SpawnOptions = {}): Promise<Record<string, unknown>> {
-	const prompt = options.prompt ?? options.task;
+export async function create_session(
+	promptOrOptions: string | SpawnOptions = {},
+	extraOptionsOrName?: SpawnOptions | string,
+): Promise<Record<string, unknown>> {
+	let opts: SpawnOptions;
+	if (typeof promptOrOptions === "string") {
+		if (typeof extraOptionsOrName === "string") {
+			opts = { prompt: promptOrOptions, name: extraOptionsOrName };
+		} else {
+			opts = { prompt: promptOrOptions, ...(extraOptionsOrName ?? {}) };
+		}
+	} else {
+		opts = { ...promptOrOptions };
+	}
+	const prompt = opts.prompt ?? opts.task;
 	if (typeof prompt !== "string" || !prompt.trim()) {
 		throw new Error("rlm.create_session requires a non-empty prompt");
 	}
-	return await op("rlm.create_session", { prompt, kwargs: _spawnKwargs(options, { allowCwd: true }) });
+	return await op("rlm.create_session", { prompt, kwargs: _spawnKwargs(opts, { allowCwd: true }) });
 }
 
 export const createSession = create_session;
@@ -200,11 +232,15 @@ export const listSubagents = list_subagents;
 
 export async function collect(
 	targets?: unknown,
-	options: Record<string, unknown> = {},
+	optionsOrTimeout?: Record<string, unknown> | number,
 ): Promise<Record<string, unknown>> {
 	const payload: Record<string, unknown> = { targets };
-	const timeoutMs = options.timeout_ms ?? options.timeoutMs;
-	if (timeoutMs !== undefined) payload.timeout_ms = timeoutMs;
+	if (typeof optionsOrTimeout === "number") {
+		payload.timeout_ms = optionsOrTimeout;
+	} else if (optionsOrTimeout && typeof optionsOrTimeout === "object") {
+		const timeoutMs = optionsOrTimeout.timeout_ms ?? optionsOrTimeout.timeoutMs;
+		if (timeoutMs !== undefined) payload.timeout_ms = timeoutMs;
+	}
 	return await op("rlm.collect", payload);
 }
 
@@ -268,6 +304,8 @@ const _rlmNamespaceTarget = Object.assign(
 		emit,
 		is_active,
 		isActive,
+		read,
+		write,
 		view,
 		spawn,
 		create_session,
@@ -348,6 +386,8 @@ if (isMainEntry) {
 		host_request,
 		hostRequest,
 		emit,
+		read,
+		write,
 		view,
 		spawn,
 		create_session,

@@ -360,6 +360,21 @@ describe("rlm L1 core: real runtime, scripted host", () => {
 		const alive = await host.runCell("l1-hostile", "2 + 2");
 		expect(alive).toBe("4");
 	});
+
+	it("L1-26 dynamic imports and helpers execute without bash in cell", async () => {
+		const code = [
+			"const testPath = '/tmp/apollo-test-preinstalled-' + Date.now() + '.txt';",
+			"write(testPath, 'hello preinstalled');",
+			"const content = read(testPath);",
+			"const yaml = await import('yaml');",
+			"const y = yaml.stringify({ greeting: content, nums: [1, 2, 3] });",
+			"const parsedY = yaml.parse(y);",
+			"JSON.stringify({ content, count: parsedY.nums.length })",
+		].join(" ");
+		const res = await host.runCell("l1-tools-multi", code);
+		expect(res).toContain('"content":"hello preinstalled"');
+		expect(res).toContain('"count":3');
+	});
 });
 
 describe("rlm L1 shutdown cleanup (dedicated child)", () => {

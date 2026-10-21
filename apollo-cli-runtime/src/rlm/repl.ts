@@ -315,6 +315,8 @@ const _RESERVED_NAMES = new Set<string>([
 	"progressNote",
 	"delete_subagent",
 	"deleteSubagent",
+	"read",
+	"write",
 	"__apollo_require__",
 	"__apollo_import__",
 ]);
@@ -575,8 +577,15 @@ function _preprocessBangLines(code: string): string {
 }
 
 function _transformTopLevelImports(code: string): string {
-	// Convert static `import ... from "spec"` into dynamic `await __apollo_import__("spec")`
-	return code.replace(
+	// 1. Convert dynamic `import(...)` into `globalThis.__apollo_import__(...)`
+	// so Node VM does not throw ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING
+	const dynamicTransformed = code.replace(
+		/\bimport\s*\(([^)]+)\)/g,
+		"globalThis.__apollo_import__($1)",
+	);
+
+	// 2. Convert static `import ... from "spec"` into dynamic `await __apollo_import__("spec")`
+	return dynamicTransformed.replace(
 		/^\s*import\s+([\s\S]*?)\s+from\s+(['"][^'"]+['"])\s*;?/gm,
 		(_match, clause: string, specifier: string) => {
 			const trimmedClause = clause.trim();
