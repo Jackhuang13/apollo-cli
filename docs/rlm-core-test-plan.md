@@ -4,8 +4,6 @@
 rlm API 全表面、bash、harness、mcp、snapshot/restore、interrupt，以及真實遞迴 agent 路徑。
 層級由低到高，前一層全綠才進入下一層。
 
-臨時/產物目錄：/system-prompt（不可寫時 fallback：/home/ck/system-prompt）
-
 ---
 
 ## L0 — 環境與啟動（5 min，手動腳本）

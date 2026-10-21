@@ -28,8 +28,6 @@ const SIMPLIFIED_TECHNICAL_ENGLISH_PROMPT = [
 const REPL_CONTROL_PROMPT = [
 	"The `iscript` tool is a persistent TypeScript/JavaScript REPL (powered by Deno/Node) — the agent's long-lived control environment for reasoning, context management, state, tool orchestration, and recursive subcalls. Top-level `await` and `!cmd` shortcuts work directly. Use it to keep intermediate variables, inspect and transform outputs, and write small helper functions. Compaction removes individual variables whose serialized form exceeds 16 MiB; keep large source data on disk and reload it when needed.",
 	"",
-	"CRITICAL TOOL CALLING RULE: You only have the `iscript` tool available. There is NO standalone `bash` tool. NEVER output `<tool_call>` or `<function=bash>` XML tags as plain text. To run shell commands, you MUST call the `iscript` tool and execute `await bash('your command')` or `!your command`.",
-	"",
 	"TypeScript/JavaScript is the orchestration language: use it for loops, conditionals, parsing, and state. Use `bash()` or `!cmd` to invoke programs, not to write shell programs — no shell loops or heredocs; do those in TypeScript.",
 	"",
 	"Do not assume the REPL is the native runtime of the external thing being investigated. A repository, package, service, dataset, paper, website, benchmark, or API may have its own environment and normal interface. Evaluate external systems through their own interface, then use the REPL to coordinate the process and analyze what comes back.",
@@ -108,6 +106,8 @@ export function buildRlmPrompt(options: RlmPromptOptions): string {
 		`Working directory: ${cwd}`,
 		`Conversation log: ${messagesPath}`,
 		`Recursive agent depth: ${depth}`,
+		"Pre-installed TypeScript/JavaScript packages: yaml, zod (pydantic), undici/http (requests/httpx), dotenv, toml (tomli), xml (bs4/lxml), math (numpy/scipy), pandas (df), and file helpers read()/write().",
+		"Use pre-installed packages and TypeScript directly for file, network, and data operations instead of resorting to shell programs.",
 	];
 
 	const childDoctrine = buildChildAgentDoctrine(options);
@@ -155,14 +155,14 @@ export function buildRlmPrompt(options: RlmPromptOptions): string {
 	if (depth === 0 && hasIpython) {
 		parts.push(
 			"",
-			"From a daemon-backed depth-0 session, use `await rlm.create_session({ prompt: 'task', name: 'researcher' })` to start a separate top-level session. The call returns after the daemon creates the session and accepts its first prompt. Inline and nested sessions cannot use it. `rlm.spawn(...)` still creates a child.",
+			"From a daemon-backed depth-0 session, use `await rlm.create_session('task', name='researcher')` (or `await rlm.create_session({ prompt: 'task', name: 'researcher' })`) to start a separate top-level session. The call returns after the daemon creates the session and accepts its first prompt. Inline and nested sessions cannot use it. `rlm.spawn(...)` still creates a child.",
 		);
 	}
 
 	if (allowRecursion && hasIpython) {
 		parts.push(
 			"",
-			"An `rlm` object is already in your global namespace. `await rlm.spawn({ prompt: 'sub-task', name: 'api-reviewer' })` spawns a child and returns immediately after task admission with `rlm_child_id`, `name`, `session_dir`, and `model`; it never waits for or returns the child's answer.",
+			"An `rlm` object is already in your global namespace. `await rlm.spawn('sub-task', name='api-reviewer')` (or `await rlm.spawn({ prompt: 'sub-task', name: 'api-reviewer' })`) spawns a child and returns immediately after task admission with `rlm_child_id`, `name`, `session_dir`, and `model`; it never waits for or returns the child's answer.",
 			"`name` is required: choose a stable child name that is unique among siblings.",
 			"A child inherits your model. If a different model is explicitly requested, use `await rlm.find_models(...)` and an exact returned selector. An unavailable requested model fails spawn; decide whether to retry or omit `model`. Children also inherit your thinking level; the `thinking` option overrides it with any level the resolved child model supports, and an unsupported level fails spawn.",
 		);
@@ -216,11 +216,11 @@ export function buildSubagentGuidance(
 	const lines = [
 		"# Delegating to sub-agents",
 		"",
-		"Spawn independent, self-contained work with `handle = await rlm.spawn({ prompt: 'task', name: 'worker' })`. This returns at admission, not completion; keep the handle to stop or inspect the child later.",
+		"Spawn independent, self-contained work with `handle = await rlm.spawn('task', name='worker')` (or `await rlm.spawn({ prompt: 'task', name: 'worker' })`). This returns at admission, not completion; keep the handle to stop or inspect the child later.",
 	];
 	if (options.hasAgentMessage) {
 		lines.push(
-			"Ask for an explicit reply when needed. A child replies with `await agent_message.send(message, { receiver_role: 'parent' })`; parent follow-ups use `{ receiver_role: 'child' }` plus the child's name or id. Not every message needs a reply.",
+			"Ask for an explicit reply when needed. A child replies with `await agent_message.send(message, receiver_role='parent')` (or `{ receiver_role: 'parent' }`); parent follow-ups use `receiver_role='child'` plus the child's name or id. Not every message needs a reply.",
 		);
 	}
 	lines.push("Use `await rlm.list_subagents()` after kernel restart or compaction.");
@@ -231,7 +231,7 @@ export function buildSubagentGuidance(
 		lines.push("Use `agent_observe` for bounded transcript inspection.");
 	}
 	lines.push(
-		"Fan-in results with `await rlm.collect(targets, { timeout_ms: 0 })`: it returns typed snapshots of direct children (status, answer preview, error) without steering anyone; an explicit timeout blocks only that call until the children settle or the deadline passes.",
+		"Fan-in results with `await rlm.collect(targets, timeout_ms=0)` (or `await rlm.collect(targets, { timeout_ms: 0 })`): it returns typed snapshots of direct children (status, answer preview, error) without steering anyone; an explicit timeout blocks only that call until the children settle or the deadline passes.",
 		"Large child outputs belong in files that you read selectively; `collect` snapshots are previews, not full results.",
 		"Delegate parallel context-heavy research or independent implementation; do a single known lookup, edit, or command inline.",
 	);
