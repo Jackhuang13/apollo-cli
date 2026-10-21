@@ -104,7 +104,7 @@ rlm.run 由真 session 管理器處理），不用 mock host。
 
 ---
 
-## 實作狀態（L0–L2 已完成）
+## 實作狀態（L0–L3 已完成）
 
 ### L1 — 已落實：packages/coding-agent/test/suite/rlm-core-l1.test.ts（commit cbe09b2）
 
@@ -154,6 +154,26 @@ client.execute 跑 rlm.spawn，完成信號一律 await collectRlmChildren（set
 | L2-08 | L2-07 | 修正：provisioner 為一次性（dispose 後 re-ensure 立即 abort），改斷言 roster 在父 kernel dispose 後仍存活（生命周期歸 host session） |
 
 額外覆蓋：L2-06（實作）rlm.spawn 只向 host 轉發 name/model/thinking（timeout kwarg → "remove unsupported options"）。
+
+### L3 — 已執行（2026-10-21，tmux 真實 CLI/TUI 冒煙）
+
+環境：tmux 120x30，./apollo-cli.sh 從 source（tsx）啟動，cwd /tmp/l3-smoke，
+model Llamacpp Local/sabi-noema（本地 llama.cpp server，零 token 成本）。
+本機 Python skills 不可用（venv bootstrap 限制），deno iscript + rlm 路徑正常。
+
+流程與結果（全過程約 25 分鐘，無 crash）：
+1. TUI 正常啟動渲染（model/cwd/subagents 面板）。✅
+2. 提示詞要求 agent 經 iscript 工具跑 rlm.spawn({prompt, name:"l3child"}) + rlm.collect。
+   spawn 被 admission（handle sub-cecc23e1），TUI subagents 面板顯示 1 running。✅
+3. 子 session 用真實本地模型執行；子以 agent_message 向 parent 回覆 "L3 child done"，
+   parent 直接收到（delivery receipt queued→delivered 路徑真實走通）。✅
+4. parent 用 rlm.collect 按 child id 重收至 settled，answer_preview 含子回覆內容。✅
+5. 子 settle 後面板轉 0 running / 1 idle（生命周期狀態顯示正確）。✅
+6. 會話可繼續：追加提示後 TUI 正常回覆（"L3 session alive."）。✅
+
+通過標準（全流程無 crash、狀態顯示正確、會話可繼續）：**通過**。
+備註：弱本地模型使子 agent 花多輪除錯（agent_message stub 環境問題）才回覆，屬模型能力而非 rlm 缺陷；
+L3 計劃中的 bash activity TUI 顯示未在本輪觸發（子未跑 bash），留待下輪抽驗。
 
 ### 關鍵約束（寫入持續 memory rlm-ts-test-plan-progress）
 - check:test-policy 禁止 per-test {timeout}（explicit-test-timeout）與 vi.waitFor（wall-clock-poll）；
