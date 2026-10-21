@@ -1338,11 +1338,8 @@ export async function startReplLoop(preloadGlobals?: Record<string, unknown>): P
 		}
 	});
 
-	const denoVersion =
-		typeof (globalThis as Record<string, unknown>).Deno === "object" &&
-		(globalThis as { Deno?: { version?: { deno?: string } } }).Deno?.version?.deno
-			? (globalThis as { Deno: { version: { deno: string } } }).Deno.version.deno
-			: process.versions.node;
+	const denoObj = (globalThis as unknown as { Deno?: { version?: { deno?: string } } }).Deno;
+	const denoVersion = typeof denoObj === "object" && denoObj?.version?.deno ? denoObj.version.deno : process.versions.node;
 
 	_sendProto({
 		event: "ready",

@@ -542,22 +542,23 @@ export class HarnessState {
 					const title = rawEntry.title;
 					const content = rawEntry.content;
 					if (typeof title !== "string" || typeof content !== "string") continue;
-					let entryPath = rawEntry.path;
-					if (typeof entryPath !== "string" && typeof rawEntry.topic === "string") {
+					let entryPath: string | undefined = typeof rawEntry.path === "string" ? rawEntry.path : undefined;
+					if (!entryPath && typeof rawEntry.topic === "string") {
 						entryPath = rawEntry.topic;
 					}
-					if (typeof entryPath !== "string") {
+					if (!entryPath) {
 						entryPath = "general";
 					}
 					const scope: HarnessScope =
 						rawEntry.scope === "local" || rawEntry.scope === "global" ? rawEntry.scope : this.scope;
 					const source = typeof rawEntry.source === "string" ? rawEntry.source : "agent";
-					let version = rawEntry.version;
-					if (typeof version === "string") {
-						const parsedVer = Number.parseInt(version, 10);
+					let version: number;
+					if (typeof rawEntry.version === "string") {
+						const parsedVer = Number.parseInt(rawEntry.version, 10);
 						version = Number.isSafeInteger(parsedVer) ? parsedVer : 1;
-					}
-					if (typeof version !== "number" || !Number.isSafeInteger(version)) {
+					} else if (typeof rawEntry.version === "number" && Number.isSafeInteger(rawEntry.version)) {
+						version = rawEntry.version;
+					} else {
 						version = 1;
 					}
 					nextEntries[kind][String(entryId)] = new HarnessEntry({

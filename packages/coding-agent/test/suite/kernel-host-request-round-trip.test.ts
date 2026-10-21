@@ -11,7 +11,7 @@ vi.mock("../../src/core/kernel/bootstrap.js", async (importOriginal) => ({
 	ensureKernelPython: vi.fn().mockRejectedValue(new Error("TS kernel must not trigger Python provisioning")),
 }));
 
-import { buildIScriptBootstrapCode, PYTHON_SKILL_IMPORT_ERROR_REPORT_MARKER } from "../../src/core/tools/iscript.js";
+import { buildIScriptBootstrapCode } from "../../src/core/tools/iscript.js";
 import { resolveKernelBashShell } from "../../src/utils/shell.js";
 
 type Frame = Record<string, unknown>;
@@ -386,13 +386,6 @@ describe("rlm.* client wire shapes (AC-07, AC-08, AC-09)", () => {
 
 describe("interpreter bootstrap dialects (AC-14, AC-15, AC-20, AC-21)", () => {
 	const skillsDir = resolve(process.cwd(), "skills");
-	const pythonRuntimeSrc = resolve(process.cwd(), "../../prime-agent-runtime/src");
-	const probeSkill = {
-		name: "probe-skill",
-		importName: "no_such_skill_apollo_probe",
-		packagePath: join(skillsDir, "probe-skill"),
-		pyprojectPath: join(skillsDir, "probe-skill", "pyproject.toml"),
-	};
 
 	it("TS kernel: bootstrap unwraps the ESM default export and named imports keep working", async () => {
 		const host = new RuntimeHost();
@@ -447,47 +440,22 @@ describe("interpreter bootstrap dialects (AC-14, AC-15, AC-20, AC-21)", () => {
 		}
 	});
 
-	it("Python fallback kernel from an external cwd runs the Python bootstrap without a JS SyntaxError", async () => {
-		const tempDir = mkdtempSync(join(tmpdir(), "apollo-py-kernel-"));
+	it("rejects startup when apollo-cli-runtime cannot be resolved", async () => {
+		const tempDir = mkdtempSync(join(tmpdir(), "apollo-no-runtime-"));
 		const previousCwd = process.cwd();
-		// An empty package dir keeps a built dist runtime from shadowing this Python fallback.
 		vi.stubEnv("PI_PACKAGE_DIR", tempDir);
 		process.chdir(tempDir);
 		let manager: ReplKernelManager | undefined;
 		try {
 			manager = new ReplKernelManager({
-				python: "python3",
 				cwd: tempDir,
-				env: { ...process.env, PYTHONPATH: pythonRuntimeSrc } as Record<string, string>,
-				pythonSkills: [probeSkill],
 			});
-			expect(manager.interpreter).toBe("script"); // constructor default before doStart
-			await manager.start();
-			// No apollo-cli-runtime under this cwd: the manager fell back to python.
-			expect(manager.interpreter).toBe("python");
-			expect(manager.buildBootstrapCode()).toContain("import rlm as _bootstrap_rlm");
-
-			const bootstrap = await manager.execute(manager.buildBootstrapCode());
-			expect(bootstrap.status).toBe("ok");
-			expect(bootstrap.stdout).toContain(PYTHON_SKILL_IMPORT_ERROR_REPORT_MARKER);
-
-			const firstCell = await manager.execute("print('first-cell', 1 + 1)");
-			expect(firstCell.status).toBe("ok");
-			expect(firstCell.stdout).toContain("first-cell 2");
-
-			const missing = await manager.execute("no_such_skill_apollo_probe.foo");
-			expect(missing.status).toBe("error");
-			expect(missing.error?.ename).toBe("AttributeError");
-			expect(missing.error?.evalue).toContain("unavailable in this kernel");
+			await expect(manager.start()).rejects.toThrow("Could not resolve apollo-cli-runtime");
 		} finally {
 			process.chdir(previousCwd);
 			vi.unstubAllEnvs();
-			try {
-				await manager?.kill();
-			} finally {
-				manager?.disposeSync();
-				rmSync(tempDir, { recursive: true, force: true });
-			}
+			manager?.disposeSync();
+			rmSync(tempDir, { recursive: true, force: true });
 		}
 	});
 

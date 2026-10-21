@@ -4,5 +4,6 @@
 - Changed the REPL doctrine prompt sections to appear based on the actually available REPL tools (`iscript`/`ipython`).
 - Rewrote the `agent_message` skill to the `host_request("agent_message.send", payload)` contract with a separate display-only helper.
 - Fixed installed builds to start the TS (IScript) kernel directly: the runtime now ships inside the package and resolves from the installed layout without Python/uv bootstrapping; `ensureKernelPython` only runs when a Python interpreter is actually selected.
-- Made an explicitly configured interpreter (env or option) deterministically select the Python kernel branch.
+- Removed the legacy Python runtime and migrated Apollo CLI entirely to the TypeScript IScript runtime (`apollo-cli-runtime`), retiring Python/uv bootstrapping and provisioning.
+- Implemented `runCli` and `cli` runner in `apollo-cli-runtime/src/rlm/skill.ts` to provide CLI argument parsing and console-script execution for skills.
 - Downgraded the `docx`, `xlsx`, `pdf`, and `pptx` skills to metadata-only inspection, matching their stub implementations.
