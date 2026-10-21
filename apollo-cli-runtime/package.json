@@ -17,6 +17,9 @@
 	"bin": {
 		"apollo-cli-repl": "./src/rlm/repl.ts"
 	},
+	"scripts": {
+		"test": "node --experimental-strip-types --test test/*.test.ts"
+	},
 	"engines": {
 		"node": ">=22.8.0"
 	}
