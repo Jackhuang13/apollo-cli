@@ -1,0 +1,2 @@
+- Changed the splash header to show "apollo-cli beta" with the 0.1.0 version instead of "prime agent v0.9.8".
+- Changed the collapsed IScript cell language label from "deno (iscript)" to "deno".

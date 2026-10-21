@@ -536,7 +536,7 @@ export class BrandSplashHeader implements Component {
 		const metaWidth = showLogo ? contentWidth - this.logoCanvasWidth - this.gutter : contentWidth;
 		const extraMetadata = this.options.getExtraMetadata?.() ?? [];
 		const version = theme.fg("muted", `v${this.version}`);
-		const titleText = "prime agent";
+		const titleText = "apollo-cli beta";
 		const title = theme.fg("text", titleText);
 		const modelLabel = "model ";
 		const cwdLabel = "cwd ";
