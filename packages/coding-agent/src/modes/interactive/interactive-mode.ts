@@ -178,7 +178,7 @@ import {
 	type TelemetryOnboardingOutcome,
 } from "../../core/telemetry.js";
 import { type TruncationResult, truncateTail } from "../../core/tools/truncate.js";
-import { APOLLO_COMPACT_LOGO } from "../../themes/apollo-logo.js";
+import { APOLLO_COMPACT_LOGO, APOLLO_LOGO, APOLLO_LOGO_ROWS, type LogoSegment } from "../../themes/apollo-logo.js";
 import { getChangelogPath, parseChangelog } from "../../utils/changelog.js";
 import { spawnHidden, spawnSyncHidden } from "../../utils/child-process.js";
 import { copyToClipboard } from "../../utils/clipboard.js";
@@ -494,6 +494,8 @@ export interface BrandSplashMetadataLine {
 
 export interface BrandSplashHeaderOptions {
 	logo?: string;
+	/** Per-segment colors for `logo`, applied at render time. */
+	logoRows?: readonly (readonly LogoSegment[])[];
 	topPadding?: boolean;
 	getModelId?: () => string | undefined;
 	getExtraMetadata?: () => readonly BrandSplashMetadataLine[];
@@ -506,10 +508,14 @@ function isAbortablePanel(component: Component): component is Component & { abor
 	return typeof (component as { abort?: unknown }).abort === "function";
 }
 
+const SPLASH_LABEL_COLOR = "#38bdf8";
+
 export class BrandSplashHeader implements Component {
 	private readonly logoRaw: string[];
+	private readonly logoRows: readonly (readonly LogoSegment[])[] | undefined;
 	private readonly logoCanvasWidth: number;
 	private readonly gutter = 3;
+	private readonly logoIndent = 2;
 
 	constructor(
 		private readonly version: string,
@@ -518,7 +524,22 @@ export class BrandSplashHeader implements Component {
 		private readonly options: BrandSplashHeaderOptions = {},
 	) {
 		this.logoRaw = (options.logo ?? APOLLO_COMPACT_LOGO).split("\n");
+		this.logoRows = options.logoRows;
 		this.logoCanvasWidth = this.logoRaw.reduce((max, line) => Math.max(max, visibleWidth(line)), 0);
+	}
+
+	/** One logo line, applying per-segment colors for the active color mode. */
+	private renderLogoLine(index: number): string {
+		const line = this.logoRaw[index] ?? "";
+		const rows = this.logoRows;
+		if (!rows || index >= rows.length) return theme.fg("text", line);
+		let out = "";
+		for (const seg of rows[index]) {
+			if (seg.color) out += theme.fgHex(seg.color, seg.text);
+			else if (seg.text.trim() !== "") out += theme.fg("text", seg.text);
+			else out += seg.text;
+		}
+		return out;
 	}
 
 	invalidate(): void {
@@ -532,20 +553,21 @@ export class BrandSplashHeader implements Component {
 		const safeWidth = Math.max(1, width);
 		const paddingX = safeWidth > 1 ? 1 : 0;
 		const contentWidth = Math.max(1, safeWidth - paddingX * 2);
-		const showLogo = this.logoCanvasWidth > 0 && contentWidth - this.logoCanvasWidth - this.gutter >= 24;
-		const metaWidth = showLogo ? contentWidth - this.logoCanvasWidth - this.gutter : contentWidth;
+		const showLogo =
+			this.logoCanvasWidth > 0 && contentWidth - this.logoCanvasWidth - this.logoIndent - this.gutter >= 24;
+		const metaWidth = showLogo ? contentWidth - this.logoCanvasWidth - this.logoIndent - this.gutter : contentWidth;
 		const extraMetadata = this.options.getExtraMetadata?.() ?? [];
-		const version = theme.fg("muted", `v${this.version}`);
+		const version = theme.bold(theme.fg("warning", `v${this.version}`));
 		const titleText = "apollo-cli beta";
 		const title = theme.fg("text", titleText);
-		const modelLabel = "model ";
-		const cwdLabel = "cwd ";
+		const modelLabel = theme.bold(theme.fgHex(SPLASH_LABEL_COLOR, "model "));
+		const cwdLabel = theme.bold(theme.fgHex(SPLASH_LABEL_COLOR, "cwd "));
 		const cwd = this.getCwd();
 		const metaLines = [
 			...(visibleWidth(`${titleText} v${this.version}`) <= metaWidth ? [`${title} ${version}`] : [title, version]),
 			...(this.options.getModelId
 				? [
-						`${theme.fg("dim", modelLabel)}${theme.fg(
+						`${modelLabel}${theme.fg(
 							"muted",
 							truncateToWidth(
 								this.options.getModelId() ?? "—",
@@ -554,20 +576,25 @@ export class BrandSplashHeader implements Component {
 						)}`,
 					]
 				: []),
-			...extraMetadata.map(({ label, value }) => `${theme.fg("dim", `${label} `)}${theme.fg("muted", value)}`),
+			...extraMetadata.map(
+				({ label, value }) =>
+					`${theme.bold(theme.fgHex(SPLASH_LABEL_COLOR, `${label} `))}${theme.fg("muted", value)}`,
+			),
 			...(cwd === undefined
 				? []
 				: [
-						`${theme.fg("dim", cwdLabel)}${theme.fg("muted", truncatePathMiddle(formatSplashCwd(cwd), Math.max(1, metaWidth - visibleWidth(cwdLabel))))}`,
+						`${cwdLabel}${theme.fg("muted", truncatePathMiddle(formatSplashCwd(cwd), Math.max(1, metaWidth - visibleWidth(cwdLabel))))}`,
 					]),
 		];
 		const lines = this.options.topPadding ? [""] : [];
 		const rowCount = Math.max(showLogo ? this.logoRaw.length : 0, metaLines.length);
-		const metaStartIndex = showLogo ? Math.floor((rowCount - metaLines.length) / 2) : 0;
+		const metaStartIndex = showLogo ? Math.max(0, rowCount - metaLines.length - 1) : 0;
 		for (let index = 0; index < rowCount; index++) {
 			const logoLine = showLogo ? (this.logoRaw[index] ?? "") : "";
 			const logo = showLogo
-				? theme.fg("text", logoLine) + " ".repeat(this.logoCanvasWidth - visibleWidth(logoLine) + this.gutter)
+				? " ".repeat(this.logoIndent) +
+					this.renderLogoLine(index) +
+					" ".repeat(this.logoCanvasWidth - visibleWidth(logoLine) + this.gutter)
 				: "";
 			const metaIndex = index - metaStartIndex;
 			const metaLine = metaIndex >= 0 && metaIndex < metaLines.length ? metaLines[metaIndex] : "";
@@ -1821,6 +1848,8 @@ export class InteractiveMode {
 					].join("\n")
 				: undefined;
 			this.builtInHeader = new BrandSplashHeader(this.version, () => this.getCurrentCwd(), verboseInstructions, {
+				logo: APOLLO_LOGO,
+				logoRows: APOLLO_LOGO_ROWS,
 				topPadding: true,
 				getModelId: () => this.getCurrentModelId(),
 				getHidden: () => this.onboardingUiActive,

@@ -1,0 +1,1 @@
+- The main splash header now shows the Apollo butterfly logo with per-segment colors, applied at render time for the terminal's color mode (truecolor, with 256-color fallback).
