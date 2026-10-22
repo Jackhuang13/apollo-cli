@@ -4,7 +4,7 @@ import { BrandSplashHeader } from "../src/modes/interactive/interactive-mode.js"
 import { initTheme } from "../src/modes/interactive/theme/theme.js";
 import { APOLLO_LOGO, APOLLO_LOGO_ROWS } from "../src/themes/apollo-logo.js";
 
-const CORE_TRUECOLOR = "\x1b[38;2;254;84;111m";
+const CORE_TRUECOLOR = "\x1b[38;2;250;46;250m";
 
 function makeHeader(): BrandSplashHeader {
 	return new BrandSplashHeader("0.0.0", () => "/tmp", undefined, {
@@ -58,7 +58,7 @@ describe("BrandSplashHeader colored logo", () => {
 		useColorMode("truecolor");
 		const output = renderJoined(100);
 		expect(output).toContain(CORE_TRUECOLOR);
-		expect(output).toContain("38;2;255;255;0m");
+		expect(output).toContain("38;2;250;199;46m");
 		expect(output).toContain("38;2;56;189;248m");
 		expect(stripAnsi(output)).toContain(APOLLO_LOGO.split("\n")[2]);
 	});
@@ -90,7 +90,7 @@ describe("BrandSplashHeader colored logo", () => {
 	it("hides the logo when the terminal is too narrow", () => {
 		useColorMode("truecolor");
 		const plain = stripAnsi(renderJoined(40));
-		expect(plain).not.toContain("▒");
-		expect(plain).not.toContain("░");
+		expect(plain).not.toContain("█");
+		expect(plain).not.toContain("▄");
 	});
 });

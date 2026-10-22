@@ -1,0 +1,1 @@
+- Changed the main splash header logo to a rainbow-gradient Prime butterfly (22 columns, left-to-right hue ramp) generated from assets/brand/prime-butterfly.svg by scripts/generate-splash-logo.mjs.
