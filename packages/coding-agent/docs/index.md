@@ -52,7 +52,6 @@ Public releases are currently installed from versioned release artifacts. The in
 - [RPC mode](rpc.md) - integrate over stdin/stdout JSONL.
 - [JSON event stream mode](json.md) - print mode with structured events.
 - [TUI components](tui.md) - build custom terminal UI for extensions.
-- [Textual TUI framework](textual-tui.md) - the Textual-style framework layer in the TUI package: widgets, CSS, bindings, and how to extend it.
 
 ## Reference
 

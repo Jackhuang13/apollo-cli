@@ -1,0 +1,1 @@
+- Removed the Textual-style framework layer (App, Screen, Widget, CSS, Pilot) from the package root; the classic differential-rendering TUI remains the only rendering engine.

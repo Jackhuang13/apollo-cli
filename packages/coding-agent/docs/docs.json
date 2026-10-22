@@ -117,10 +117,6 @@
         {
           "title": "TUI Components",
           "path": "tui.md"
-        },
-        {
-          "title": "Textual TUI Framework",
-          "path": "textual-tui.md"
         }
       ]
     },

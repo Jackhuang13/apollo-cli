@@ -121,7 +121,6 @@ export {
 	setCellDimensions,
 	type TerminalCapabilities,
 } from "./terminal-image.js";
-export * from "./textual/index.js";
 export {
 	type Component,
 	Container,

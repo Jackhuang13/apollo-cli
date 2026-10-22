@@ -87,10 +87,9 @@ From the session queue onward, the same execution and persistence path is used w
 
 ## Apollo CLI Fork Notes
 
-This repository is a fork of PrimeIntellect-ai/prime-agent, renamed Apollo CLI. Two changes affect the diagrams above:
+This repository is a fork of PrimeIntellect-ai/prime-agent, renamed Apollo CLI. One change affects the diagrams above:
 
 - The "Python kernel" node is now a **dual-runtime kernel**. A source checkout resolves to the TypeScript IScript runtime (`apollo-cli-runtime/`, Node `--experimental-strip-types` or Deno); installed releases ship the Python runtime (`prime-agent-runtime/`, `python -m rlm.repl`). The model-facing tool is `iscript` with `ipython` as an alias of the same implementation. The IScript host-request bridge is not yet fully wired (P0); read [IScript Kernel](iscript-kernel.md) before adjusting the kernel.
-- `packages/tui` also ships a **Textual-style framework layer** (`src/textual/`) on top of the classic differential-rendering TUI. It is exported from the package root but the interactive mode does not use it yet; see [Textual TUI Framework](textual-tui.md).
 
 ## Detailed Architecture
 

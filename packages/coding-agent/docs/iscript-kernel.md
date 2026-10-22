@@ -5,8 +5,7 @@ runtime that executes on Node (`--experimental-strip-types`) or Deno. This page 
 kernel works today and lists the known integration gaps to work through before adjusting IScript.
 
 > **Naming.** "IScript" is a repo-internal name, not an external npm/Deno package (verified
-> against npm registry and web search on 2026-10-19). Likewise the "Texture TUI" mentioned in
-> discussions is `packages/tui/src/textual/`; see [Textual TUI Framework](textual-tui.md).
+> against npm registry and web search on 2026-10-19).
 
 ## Current state in one paragraph
 
