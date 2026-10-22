@@ -246,3 +246,18 @@ test("repl appends recovery hints to known kernel failure signatures", async () 
 		repl.close();
 	}
 });
+
+test("repl resolves dynamic imports of node: builtins (regression: dynamic import callback)", async () => {
+	const repl = new ReplTestDriver();
+	try {
+		await repl.nextEvent(); // ready
+		// Concatenated so the source never contains a literal dynamic-import pattern:
+		// this kernel rewrites import patterns in cell source, including string literals.
+		const code = "const fs = await " + ["imp", "ort"].join("") + '("node:fs"); typeof fs.readFile';
+		const imp = await runCell(repl, "imp", code);
+		assert.equal(imp.status, "ok");
+		assert.equal(imp.resultText, "'function'");
+	} finally {
+		repl.close();
+	}
+});

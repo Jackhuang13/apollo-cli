@@ -772,7 +772,14 @@ export class ReplKernelManager {
 			if (signal.aborted) return;
 		}
 		const ok = await task; // bounded by REPAIR_STEP_TIMEOUT_MS
-		if (!ok) throw new Error("Kernel bootstrap failed after protocol repair");
+		if (!ok) throw new Error(this.bootstrapFailureMessage());
+	}
+
+	/** Re-bootstrap failure message, carrying the kernel diagnostic tail when available. */
+	private bootstrapFailureMessage(): string {
+		const tail = this.kernelStderr.slice(-1024).trim();
+		const base = "Kernel bootstrap failed after protocol repair";
+		return tail ? `${base}\n${tail}` : base;
 	}
 
 	/** Restore (one-shot, best-effort) then bootstrap the lazily started fresh kernel. */

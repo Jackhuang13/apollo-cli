@@ -488,7 +488,9 @@ describe("ReplKernelManager corrupt protocol repair", () => {
 			// lazy attempt on kernel 3 fails the same way: the snapshot was never
 			// the culprit, so neither discard may poison it.
 			await expect(manager.execute("corrupt-active")).rejects.toThrow("Kernel protocol error");
-			await expect(manager.execute("read")).rejects.toThrow("Kernel bootstrap failed after protocol repair");
+			const bootErr: unknown = await manager.execute("read").catch((error) => error);
+			expect(String((bootErr as Error).message)).toContain("Kernel bootstrap failed after protocol repair");
+			expect(String((bootErr as Error).message)).toContain("protocol repair bootstrap");
 
 			rmSync(bootstrapFailurePath);
 			await expect(manager.execute("read")).resolves.toMatchObject({ status: "ok", stdout: "persisted" });

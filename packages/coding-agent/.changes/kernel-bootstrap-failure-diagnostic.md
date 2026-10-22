@@ -1,0 +1,1 @@
+- Kernel bootstrap failure after protocol repair now includes the tail of the kernel diagnostic log, so the underlying failure is visible in the error instead of an opaque message.
