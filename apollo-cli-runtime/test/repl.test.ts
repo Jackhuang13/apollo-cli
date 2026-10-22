@@ -230,3 +230,19 @@ test("repl keeps expressions wrapped across newlines as one statement (regressio
 		repl.close();
 	}
 });
+
+test("repl appends recovery hints to known kernel failure signatures", async () => {
+	const repl = new ReplTestDriver();
+	try {
+		await repl.nextEvent(); // ready
+		const deno = await runCell(repl, "deno", "Deno.stat('/tmp')");
+		assert.equal(deno.status, "error");
+		assert.ok(deno.errorText.includes("this IScript kernel runs on Node (node:vm)"));
+
+		const out = await runCell(repl, "out", "const r = await bash('echo hi'); r.output();");
+		assert.equal(out.status, "error");
+		assert.ok(out.errorText.includes("output is a string property (result.output)"));
+	} finally {
+		repl.close();
+	}
+});

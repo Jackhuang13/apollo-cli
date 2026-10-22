@@ -1,0 +1,1 @@
+- Corrected the IScript tool description and kernel prompt to reference the Node kernel instead of Deno, and added after-the-fact hints for `Deno is not defined` and `output is not a function` failures.

@@ -26,13 +26,13 @@ const SIMPLIFIED_TECHNICAL_ENGLISH_PROMPT = [
 ].join("\n");
 
 const REPL_CONTROL_PROMPT = [
-	"The `iscript` tool is a persistent TypeScript/JavaScript REPL (powered by Deno/Node) — the agent's long-lived control environment for reasoning, context management, state, tool orchestration, and recursive subcalls. Top-level `await` and `!cmd` shortcuts work directly. Use it to keep intermediate variables, inspect and transform outputs, and write small helper functions. Compaction removes individual variables whose serialized form exceeds 16 MiB; keep large source data on disk and reload it when needed.",
+	"The `iscript` tool is a persistent TypeScript/JavaScript REPL (Node, node:vm) — the agent's long-lived control environment for reasoning, context management, state, tool orchestration, and recursive subcalls. The kernel is Node: use node:fs, node:path, node:child_process, and the pre-installed packages for file, network, and data work. Top-level `await` and `!cmd` shortcuts work directly. Use it to keep intermediate variables, inspect and transform outputs, and write small helper functions. Compaction removes individual variables whose serialized form exceeds 16 MiB; keep large source data on disk and reload it when needed.",
 	"",
 	"TypeScript/JavaScript is the orchestration language: use it for loops, conditionals, parsing, and state. Use `bash()` or `!cmd` to invoke programs, not to write shell programs — no shell loops or heredocs; do those in TypeScript.",
 	"",
 	"Do not assume the REPL is the native runtime of the external thing being investigated. A repository, package, service, dataset, paper, website, benchmark, or API may have its own environment and normal interface. Evaluate external systems through their own interface, then use the REPL to coordinate the process and analyze what comes back.",
 	"",
-	"`bash(command)` starts a shell command in the background and returns a handle immediately: `const h = bash('npm test')`. Use `h.pid` / `h.running` for liveness, `h.tail(n)` / `h.output()` for combined stdout+stderr so far, `h.poll()` for a non-blocking result, `h.kill()` to terminate (SIGTERM, escalating to SIGKILL; on Windows kill() uses taskkill /T and detached or reparented descendants may survive), and `await h` (or `await bash('cmd')`) for the completed result with exit_code, output, and duration. Prefer bash() for long-running commands so the turn keeps working. Run shell commands with `bash()`, not raw child_process: child_process calls block the kernel, show the user nothing while they run, and spawn processes the harness cannot see or stop.",
+	"`bash(command)` starts a shell command in the background and returns a handle immediately: `const h = bash('npm test')`. Use `h.pid` / `h.running` for liveness, `h.tail(n)` / `h.output()` for combined stdout+stderr so far, `h.poll()` for a non-blocking result, `h.kill()` to terminate (SIGTERM, escalating to SIGKILL; on Windows kill() uses taskkill /T and detached or reparented descendants may survive), and `await h` (or `await bash('cmd')`) for the completed result with exit_code, output, and duration. On a completed result, `output` is a string property (`result.output`), not a method; the `output()` method exists only on a running handle, before awaiting. Prefer bash() for long-running commands so the turn keeps working. Run shell commands with `bash()`, not raw child_process: child_process calls block the kernel, show the user nothing while they run, and spawn processes the harness cannot see or stop.",
 	"",
 	"Important: do not install dependencies into the kernel just to make an external project import or run there. If a project import, test, script, CLI, or dependency check is needed, run it through that project's own environment and normal command interface. For example, in a project repo use its documented commands, `npm test`, `cargo test`, `python ...`, or the active project interpreter from the repo root. Treat failures from that native environment as the relevant result.",
 	"",
@@ -106,7 +106,7 @@ export function buildRlmPrompt(options: RlmPromptOptions): string {
 		`Working directory: ${cwd}`,
 		`Conversation log: ${messagesPath}`,
 		`Recursive agent depth: ${depth}`,
-		"Pre-installed TypeScript/JavaScript packages: yaml, zod (pydantic), undici/http (requests/httpx), dotenv, toml (tomli), xml (bs4/lxml), math (numpy/scipy), pandas (df), and file helpers read()/write().",
+		"Pre-installed TypeScript/JavaScript packages: yaml, zod (pydantic), undici/http (requests/httpx), dotenv, toml (tomli), xml (bs4/lxml), math (numpy/scipy), pandas (df).",
 		"Use pre-installed packages and TypeScript directly for file, network, and data operations instead of resorting to shell programs.",
 	];
 
@@ -162,7 +162,7 @@ export function buildRlmPrompt(options: RlmPromptOptions): string {
 	if (allowRecursion && hasIpython) {
 		parts.push(
 			"",
-			"An `rlm` object is already in your global namespace. `await rlm.spawn('sub-task', name='api-reviewer')` (or `await rlm.spawn({ prompt: 'sub-task', name: 'api-reviewer' })`) spawns a child and returns immediately after task admission with `rlm_child_id`, `name`, `session_dir`, and `model`; it never waits for or returns the child's answer.",
+			"An `rlm` object is already in your global namespace. `await rlm.spawn({ prompt: 'sub-task', name: 'api-reviewer' })` spawns a child and returns immediately after task admission with `rlm_child_id`, `name`, `session_dir`, and `model`; it never waits for or returns the child's answer.",
 			"`name` is required: choose a stable child name that is unique among siblings.",
 			"A child inherits your model. If a different model is explicitly requested, use `await rlm.find_models(...)` and an exact returned selector. An unavailable requested model fails spawn; decide whether to retry or omit `model`. Children also inherit your thinking level; the `thinking` option overrides it with any level the resolved child model supports, and an unsupported level fails spawn.",
 		);

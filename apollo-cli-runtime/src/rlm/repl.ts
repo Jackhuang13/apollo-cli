@@ -778,8 +778,25 @@ function _formatValue(val: unknown): string {
 	});
 }
 
+/**
+ * Guidance appended to failures models keep reproducing: Deno.* calls in the
+ * Node kernel, and treating a completed bash result's `output` string as a
+ * method.
+ */
+function _knownFailureHint(err: unknown): string | undefined {
+	if (!(err instanceof Error)) return undefined;
+	if (err.name === "ReferenceError" && /Deno is not defined/.test(err.message)) {
+		return "Hint: this IScript kernel runs on Node (node:vm); use node:fs, node:path, node:child_process, and other node:* modules.";
+	}
+	if (err.name === "TypeError" && /\.output is not a function/.test(err.message)) {
+		return "Hint: an awaited bash() result's output is a string property (result.output); the output() method exists only on a running handle, before awaiting.";
+	}
+	return undefined;
+}
+
 function _formatTraceback(err: unknown, cellNum: number): { ename: string; evalue: string; traceback: string[] } {
 	const cellTag = `<cell-${cellNum}>`;
+	const hint = _knownFailureHint(err);
 	if (err instanceof Error) {
 		const ename = err.name || "Error";
 		const evalue = err.message || String(err);
@@ -790,13 +807,16 @@ function _formatTraceback(err: unknown, cellNum: number): { ename: string; evalu
 		if (!lines.some((l) => l.includes(cellTag))) {
 			lines.push(`    at ${cellTag}:1:1`);
 		}
+		if (hint) lines.push(hint);
 		return { ename, evalue, traceback: lines };
 	}
 	const text = String(err);
+	const traceback = [`Error: ${text}`, `    at ${cellTag}:1:1`];
+	if (hint) traceback.push(hint);
 	return {
 		ename: "Error",
 		evalue: text,
-		traceback: [`Error: ${text}`, `    at ${cellTag}:1:1`],
+		traceback,
 	};
 }
 

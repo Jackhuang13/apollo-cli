@@ -7,6 +7,7 @@ import {
 } from "../../src/core/prompts/index.js";
 import type { Skill } from "../../src/core/skills.js";
 import { buildSystemPrompt } from "../../src/core/system-prompt.js";
+import { createIScriptToolDefinition } from "../../src/core/tools/iscript.js";
 
 const SKILL = {
 	name: "demo-skill",
@@ -80,6 +81,11 @@ describe("REPL doctrine gate (AC-18)", () => {
 			expect(prompt).not.toContain(marker);
 		}
 		expect(prompt).toContain("rlm.spawn({ prompt: 'sub-task', name: 'api-reviewer' })");
+		expect(prompt).not.toContain("Deno");
+		expect(prompt).toContain("node:vm");
+		const tool = createIScriptToolDefinition("/tmp");
+		expect(`${tool.description}\n${tool.promptSnippet}`).not.toContain("Deno");
+		expect(tool.description).toContain("Node");
 		expect(prompt).toContain("rlm.create_session({ prompt: 'task', name: 'researcher' })");
 		expect(buildSubagentGuidance({ hasAgentMessage: true })).toContain("rlm.collect(targets, { timeout_ms: 0 })");
 	});

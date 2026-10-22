@@ -188,7 +188,7 @@ ${skillLoop}
 export const iscriptSchema = Type.Object({
 	code: Type.String({
 		description:
-			"TypeScript / JavaScript code to execute in the persistent IScript (Deno/Node) REPL. Top-level await and !cmd shortcuts are supported. Use the target project's own environment for project imports, tests, scripts, CLIs, and dependency checks instead of direct kernel imports.",
+			"TypeScript / JavaScript code to execute in the persistent IScript (Node) REPL. Top-level await and !cmd shortcuts are supported. Use the target project's own environment for project imports, tests, scripts, CLIs, and dependency checks instead of direct kernel imports.",
 	}),
 });
 
@@ -696,8 +696,8 @@ export function createIScriptToolDefinition(
 		name: toolName,
 		label: options?.label ?? toolName,
 		description:
-			"Execute TypeScript / JavaScript code in a persistent IScript (Deno/Node) REPL. Top-level `await` and `!cmd` shortcuts are supported. Variables, imports, and loaded data persist across calls, and are revived on a best-effort basis when a session is resumed. Run shell commands with `bash('cmd')` / `await bash('cmd')` or `!cmd`. Project imports, tests, scripts, CLIs, and dependency checks should run through the target project's own environment.",
-		promptSnippet: "iscript - persistent TypeScript/Deno REPL for code, state, and bash() orchestration",
+			"Execute TypeScript / JavaScript code in a persistent IScript (Node) REPL. Top-level `await` and `!cmd` shortcuts are supported. Variables, imports, and loaded data persist across calls, and are revived on a best-effort basis when a session is resumed. Run shell commands with `bash('cmd')` / `await bash('cmd')` or `!cmd`. Project imports, tests, scripts, CLIs, and dependency checks should run through the target project's own environment.",
+		promptSnippet: "iscript - persistent TypeScript/JavaScript (Node) REPL for code, state, and bash() orchestration",
 		// The kernel is single-threaded — apollo must not run two iscript calls in parallel within a batch.
 		executionMode: "sequential",
 		parameters: iscriptSchema,
