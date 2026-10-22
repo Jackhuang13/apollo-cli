@@ -476,7 +476,11 @@ function _splitTopLevelStatements(code: string): TopLevelStatement[] {
 			if (ch === "\n") {
 				// Check if statement up to here is syntactically complete
 				const candidate = code.slice(stmtStart, i).trim();
-				if (candidate.length > 0 && _isSyntacticallyCompleteStatement(candidate)) {
+				if (
+					candidate.length > 0 &&
+					_isSyntacticallyCompleteStatement(candidate) &&
+					!_nextLineContinuesExpression(code, i)
+				) {
 					i++;
 					pushStatement(i);
 					continue;
@@ -505,6 +509,40 @@ function _isSyntacticallyCompleteStatement(stmt: string): boolean {
 	} catch {
 		return false;
 	}
+}
+const _CONTINUATION_LINE_HEAD = /^(?:\.|\`|\?|,|[+\-*%&|^=<>]|\bin\b|\binstanceof\b)/;
+
+/**
+ * True when the first significant token after `pos` (skipping blanks, line
+ * comments, and block comments) can continue the expression ending there — a
+ * leading `.` (member access, not a numeric fraction), backtick, `?`, `,`,
+ * a binary-operator character, or the `in` / `instanceof` keywords. V8
+ * inserts no automatic semicolon before such tokens, so the newline must not
+ * end the statement (e.g. a method chain wrapped across lines).
+ */
+function _nextLineContinuesExpression(code: string, from: number): boolean {
+	let i = from;
+	while (i < code.length) {
+		const ch = code[i]!;
+		if (ch === " " || ch === "\t" || ch === "\r" || ch === "\n") {
+			i++;
+			continue;
+		}
+		if (ch === "/" && code[i + 1] === "/") {
+			while (i < code.length && code[i] !== "\n") i++;
+			continue;
+		}
+		if (ch === "/" && code[i + 1] === "*") {
+			i += 2;
+			while (i < code.length && !(code[i] === "*" && code[i + 1] === "/")) i++;
+			i += 2;
+			continue;
+		}
+		break;
+	}
+	if (i >= code.length) return false;
+	if (code[i] === "." && code[i + 1] >= "0" && code[i + 1] <= "9") return false;
+	return _CONTINUATION_LINE_HEAD.test(code.slice(i));
 }
 
 function _extractDeclaredNames(pattern: string): string[] {

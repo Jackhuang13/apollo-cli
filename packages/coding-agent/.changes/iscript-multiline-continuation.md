@@ -1,0 +1,1 @@
+- Fixed IScript cells that wrap a method chain or operator onto a continuation line (leading `.` or `+`), which previously broke with `SyntaxError: Unexpected token '.'`.

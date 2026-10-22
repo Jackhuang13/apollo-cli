@@ -193,3 +193,40 @@ test("repl handles syntax and runtime errors gracefully without crashing process
 		repl.close();
 	}
 });
+
+async function runCell(repl: ReplTestDriver, id: string, code: string) {
+	repl.send({ type: "execute", id, code });
+	let done: any;
+	let resultText = "";
+	let errorText = "";
+	for (;;) {
+		const ev = await repl.nextEvent();
+		if (ev.event === "result") resultText = ev.text;
+		else if (ev.event === "error") errorText = `${(ev.traceback ?? []).join("\n")}\n${ev.evalue ?? ""}`;
+		else if (ev.event === "done") {
+			done = ev;
+			break;
+		}
+	}
+	return { ...done, resultText, errorText };
+}
+
+test("repl keeps expressions wrapped across newlines as one statement (regression: multi-line chains)", async () => {
+	const repl = new ReplTestDriver();
+	try {
+		await repl.nextEvent(); // ready
+		const chain = await runCell(repl, "chain", "const chain = [1,2,3]\n  .filter((x) => x > 1)\n  .map((x) => x * 2);\nchain");
+		assert.equal(chain.status, "ok");
+		assert.equal(chain.resultText, "[ 4, 6 ]");
+
+		const op = await runCell(repl, "op", "let a = 1\n+ 2;\na");
+		assert.equal(op.status, "ok");
+		assert.equal(op.resultText, "3");
+
+		const guard = await runCell(repl, "guard", "let x = 1\nlet y = 2\nfunction f() {\n  return 7;\n}\nf() + x + y");
+		assert.equal(guard.status, "ok");
+		assert.equal(guard.resultText, "10");
+	} finally {
+		repl.close();
+	}
+});
