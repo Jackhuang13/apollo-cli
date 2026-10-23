@@ -318,7 +318,8 @@ export class BashHandle implements PromiseLike<BashResult> {
 	private _reapWaiters: Array<() => void> = [];
 	private _timeoutTimer: ReturnType<typeof setTimeout> | null = null;
 	private _forceKillTimer: ReturnType<typeof setTimeout> | null = null;
-	private _heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+	/** Timeout duration in milliseconds scheduled for this handle, or null if indefinite. */
+	readonly scheduledTimeoutMs: number | null = null;
 
 	constructor(command: string, options?: BashOptions) {
 		this.command = command;
@@ -345,42 +346,29 @@ export class BashHandle implements PromiseLike<BashResult> {
 			);
 		}
 
-		const effectiveTimeout =
+		// Timeout resolution: options.timeout is strictly in seconds.
+		// undefined -> default 600s.
+		// null or 0 -> no timeout (indefinite).
+		// positive finite number -> seconds * 1000 ms.
+		const effectiveTimeoutSec =
 			options?.timeout === undefined
 				? DEFAULT_BASH_TIMEOUT_SECONDS
-				: options.timeout !== null && options.timeout > 0 && Number.isFinite(options.timeout)
+				: typeof options.timeout === "number" && Number.isFinite(options.timeout) && options.timeout > 0
 					? options.timeout
 					: null;
 
-		if (effectiveTimeout !== null) {
-			const timeoutMs = effectiveTimeout <= 600 ? effectiveTimeout * 1000 : effectiveTimeout;
+		if (effectiveTimeoutSec !== null) {
+			const timeoutMs = Math.round(effectiveTimeoutSec * 1000);
+			this.scheduledTimeoutMs = timeoutMs;
 			this._timeoutTimer = setTimeout(() => {
 				if (!this._done) {
 					this.kill(0.5);
 				}
 			}, timeoutMs);
 			this._timeoutTimer.unref?.();
+		} else {
+			this.scheduledTimeoutMs = null;
 		}
-
-		// Heartbeat for long-running commands (every 30 seconds while running)
-		this._heartbeatTimer = setInterval(() => {
-			if (this._done || this._reaped) {
-				if (this._heartbeatTimer) clearInterval(this._heartbeatTimer);
-				this._heartbeatTimer = null;
-				return;
-			}
-			if (replBridge?.isActive()) {
-				const elapsedSec = Math.round((performance.now() - this._started) / 1000);
-				replBridge.sendRawEvent({
-					event: "bash_heartbeat",
-					pid: this._pid,
-					elapsed: elapsedSec,
-					running: this.running,
-					descendants: this.descendants().length,
-				});
-			}
-		}, 30_000);
-		this._heartbeatTimer.unref?.();
 
 		let stdoutEnded = false;
 		let stderrEnded = false;
@@ -477,12 +465,13 @@ export class BashHandle implements PromiseLike<BashResult> {
 	 * Returns all live descendant processes spawned under this bash handle
 	 * (excluding the current session kernel PID to prevent accidental termination).
 	 */
-	descendants(): Array<{ pid: number; ppid: number; comm?: string }> {
+	descendants(): Array<{ pid: number; ppid: number; comm?: string; state?: string }> {
 		this._released = true;
 		if (this._reaped || this._pid <= 0) return [];
 		const rootPid = this._pid;
 		const parentMap = new Map<number, number>();
 		const commMap = new Map<number, string>();
+		const stateMap = new Map<number, string>();
 
 		if (IS_POSIX) {
 			try {
@@ -493,14 +482,17 @@ export class BashHandle implements PromiseLike<BashResult> {
 					if (pid === process.pid) continue; // Safety guard: ignore current kernel process
 					try {
 						const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+						// Match after the last closing parenthesis to prevent comm with spaces/parens from throwing off field indices
 						const rpar = stat.lastIndexOf(")");
 						if (rpar !== -1) {
 							const comm = stat.slice(stat.indexOf("(") + 1, rpar);
 							const fields = stat.slice(rpar + 2).split(" ");
+							const state = fields[0];
 							const ppid = Number.parseInt(fields[1] || "", 10);
 							if (Number.isFinite(ppid)) {
 								parentMap.set(pid, ppid);
 								commMap.set(pid, comm);
+								if (state) stateMap.set(pid, state);
 							}
 						}
 					} catch {
@@ -513,7 +505,7 @@ export class BashHandle implements PromiseLike<BashResult> {
 		}
 
 		const queue = [rootPid];
-		const descendants: Array<{ pid: number; ppid: number; comm?: string }> = [];
+		const descendants: Array<{ pid: number; ppid: number; comm?: string; state?: string }> = [];
 		const visited = new Set<number>([rootPid]);
 
 		while (queue.length > 0) {
@@ -521,7 +513,12 @@ export class BashHandle implements PromiseLike<BashResult> {
 			for (const [pid, ppid] of parentMap.entries()) {
 				if (ppid === curr && !visited.has(pid)) {
 					visited.add(pid);
-					descendants.push({ pid, ppid, comm: commMap.get(pid) });
+					descendants.push({
+						pid,
+						ppid,
+						comm: commMap.get(pid),
+						state: stateMap.get(pid),
+					});
 					queue.push(pid);
 				}
 			}
@@ -571,10 +568,6 @@ export class BashHandle implements PromiseLike<BashResult> {
 			clearTimeout(this._timeoutTimer);
 			this._timeoutTimer = null;
 		}
-		if (this._heartbeatTimer) {
-			clearInterval(this._heartbeatTimer);
-			this._heartbeatTimer = null;
-		}
 		const duration = (performance.now() - this._started) / 1000;
 		const output = this._buffer.text();
 		this._result = {
@@ -595,10 +588,6 @@ export class BashHandle implements PromiseLike<BashResult> {
 		if (this._forceKillTimer) {
 			clearTimeout(this._forceKillTimer);
 			this._forceKillTimer = null;
-		}
-		if (this._heartbeatTimer) {
-			clearInterval(this._heartbeatTimer);
-			this._heartbeatTimer = null;
 		}
 		if (IS_POSIX) {
 			signalGroup(this._pid, "SIGKILL");

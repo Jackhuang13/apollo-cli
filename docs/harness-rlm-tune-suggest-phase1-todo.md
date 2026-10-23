@@ -21,14 +21,14 @@
 ## [x] P1-5 1.2.3 `APOLLO_SESSION_KERNEL_PID` 注入 session kernel 自身 env
 - **完成方式**：在 `repl.ts` 啟動階段將 `process.env.APOLLO_SESSION_KERNEL_PID = String(process.pid)` 注入 Kernel 本身。
 
-## [x] P1-6 1.2.4 長任務 heartbeat
-- **完成方式**：`bash.ts` 建立每 30 秒自動發送的 `bash_heartbeat` 事件定時器，任務完成/reap 時自動清理。
+## [x] P1-6 1.2.4 長任務 heartbeat 與通訊協議防護
+- **完成方式**：經複核發現原發射之 `bash_heartbeat` 未列入 Host `PROTOCOL_EVENT_KINDS` 白名單，依 daemon-protocol 規範暫止發射未經協商的事件（避免觸發 `failProtocolFrame` 重建 Kernel）。已盤點所有 runtime 事件均嚴格符合 Host 協議。後續若需前端日誌將採協議 capability-gate 擴充。
 
-## [x] P1-7 model-facing prompt 同步 600s 預設超時與 `timeout: null` 出口
-- **完成方式**：`packages/coding-agent/src/core/prompts/rlm.ts` 已更新說明預設 600s 上界與 `{ timeout: null }` 長任務出口。
+## [x] P1-7 model-facing prompt 與 bash 統一秒數契約
+- **完成方式**：`packages/coding-agent/src/core/prompts/rlm.ts` 與 `bash.ts` 統一 `timeout` 單位為純秒數，移除 `<=600` 斷崖啟發式，嚴格保留 `timeout: null` 與 `0` 不排程計時器（無上限）。
 
 ## [x] P1-8 補強 descendants / 孤兒回收測試斷言
-- **完成方式**：`bash.test.ts` 補強驗證檢測到 `sleep` 子程，且在逾時 group kill 後驗證 `descendants()` 確實清空為 0。
+- **完成方式**：`bash.test.ts` 補強驗證檢測到子行程、解析 `/proc/<pid>/stat` 提取 `state`（R,S,D,Z,T）欄位並防 comm 空格錯位，白盒斷言 `scheduledTimeoutMs`（支援 900s 換算與 null 無上限），且在逾時 group kill 後驗證 `descendants()` 確實清空為 0。
 
 ## [x] P2-9 apollo-cli-runtime 納入 type-check 覆蓋
 - **完成方式**：新增 `apollo-cli-runtime/tsconfig.json`（支援 `allowImportingTsExtensions`），並將 `tsgo --noEmit -p apollo-cli-runtime/tsconfig.json` 整合進 root `package.json` 的 `npm run check`，修復所有型別報錯。

@@ -57,3 +57,36 @@ test("bash() tracks descendant processes and enforces timeout", async () => {
 	const afterReap = handle.descendants();
 	assert.equal(afterReap.length, 0);
 });
+
+test("bash() timeout options and scheduledTimeoutMs contract", async () => {
+	const hDefault = bash("echo default");
+	assert.equal(hDefault.scheduledTimeoutMs, 600_000);
+	await hDefault;
+
+	const h900 = bash("echo 900", { timeout: 900 });
+	assert.equal(h900.scheduledTimeoutMs, 900_000);
+	await h900;
+
+	const hNull = bash("echo null", { timeout: null });
+	assert.equal(hNull.scheduledTimeoutMs, null);
+	await hNull;
+
+	const hZero = bash("echo zero", { timeout: 0 });
+	assert.equal(hZero.scheduledTimeoutMs, null);
+	await hZero;
+});
+
+test("bash() descendants state parsing", async () => {
+	const handle = bash("sh -c 'sleep 10'");
+	await new Promise((resolve) => setTimeout(resolve, 100));
+	const descendants = handle.descendants();
+	if (process.platform === "linux") {
+		assert.ok(descendants.length >= 1);
+		for (const d of descendants) {
+			assert.ok(typeof d.state === "string");
+			assert.match(d.state, /^[RSDZTW]$/);
+		}
+	}
+	handle.kill();
+	await handle;
+});
