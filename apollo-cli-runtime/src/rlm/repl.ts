@@ -614,48 +614,178 @@ function _preprocessBangLines(code: string): string {
 	return out.join("\n");
 }
 
-function _transformTopLevelImports(code: string): string {
-	// 1. Convert dynamic `import(...)` into `globalThis.__apollo_import__(...)`
-	// so Node VM does not throw ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING
-	const dynamicTransformed = code.replace(
-		/\bimport\s*\(([^)]+)\)/g,
-		"globalThis.__apollo_import__($1)",
-	);
-
-	// 2. Convert static `import ... from "spec"` into dynamic `await __apollo_import__("spec")`
-	return dynamicTransformed.replace(
-		/^\s*import\s+([\s\S]*?)\s+from\s+(['"][^'"]+['"])\s*;?/gm,
-		(_match, clause: string, specifier: string) => {
-			const trimmedClause = clause.trim();
-			if (trimmedClause.startsWith("* as ")) {
-				const nsName = trimmedClause.slice(5).trim();
-				recordUserGlobal(nsName);
-				return `const ${nsName} = (globalThis.${nsName} = await globalThis.__apollo_import__(${specifier}));`;
+/**
+ * Lex a code region starting at `i`, marking every non-code character
+ * (strings, template text, comments) as 0 in `mask`; code stays 1. Template
+ * interpolations are lexed recursively as code regions. Returns the index
+ * just past the region: `limit` for a top-level region, or just past the
+ * top-level closing `}` of an interpolation.
+ */
+function _lexCodeRegion(code: string, mask: Uint8Array, i: number, limit: number, inInterpolation: boolean): number {
+	let interpBraceDepth = 0;
+	while (i < limit) {
+		const ch = code[i]!;
+		const next = code[i + 1];
+		if (ch === "/" && next === "/") {
+			const start = i;
+			i += 2;
+			while (i < limit && code[i] !== "\n") i++;
+			for (let k = start; k < i; k++) mask[k] = 0;
+			continue;
+		}
+		if (ch === "/" && next === "*") {
+			const start = i;
+			i += 2;
+			while (i + 1 < limit && !(code[i] === "*" && code[i + 1] === "/")) i++;
+			i = Math.min(limit, i + 2);
+			for (let k = start; k < i; k++) mask[k] = 0;
+			continue;
+		}
+		if (ch === "'" || ch === '"') {
+			const start = i;
+			const quote = ch;
+			i++;
+			while (i < limit && code[i] !== quote) {
+				if (code[i] === "\\") i += 2;
+				else i++;
 			}
-			if (trimmedClause.startsWith("{") && trimmedClause.endsWith("}")) {
-				const inner = trimmedClause.slice(1, -1).replace(/\s+as\s+/g, ": ");
-				const names = _extractDeclaredNames(inner);
-				const assignGlobals = names.map((n) => `globalThis.${n} = ${n};`).join(" ");
-				for (const n of names) recordUserGlobal(n);
-				return `const { ${inner} } = await globalThis.__apollo_import__(${specifier}); ${assignGlobals}`;
+			i = Math.min(limit, i + 1);
+			for (let k = start; k < i; k++) mask[k] = 0;
+			continue;
+		}
+		if (ch === "`") {
+			mask[i] = 0;
+			i++;
+			while (i < limit) {
+				if (code[i] === "\\") {
+					mask[i] = 0;
+					if (i + 1 < limit) mask[i + 1] = 0;
+					i += 2;
+					continue;
+				}
+				if (code[i] === "`") {
+					mask[i] = 0;
+					i++;
+					break;
+				}
+				if (code[i] === "$" && code[i + 1] === "{") {
+					i += 2;
+					i = _lexCodeRegion(code, mask, i, limit, true);
+					continue;
+				}
+				mask[i] = 0;
+				i++;
 			}
-			// Default import or default + named import
-			const braceIdx = trimmedClause.indexOf("{");
-			if (braceIdx === -1) {
-				const defName = trimmedClause;
-				recordUserGlobal(defName);
-				return `const __mod_${defName} = await globalThis.__apollo_import__(${specifier}); const ${defName} = (globalThis.${defName} = __mod_${defName}.default ?? __mod_${defName});`;
+			continue;
+		}
+		if (inInterpolation) {
+			if (ch === "{") {
+				interpBraceDepth++;
+				i++;
+				continue;
 			}
-			const defName = trimmedClause.slice(0, braceIdx).replace(/,$/, "").trim();
-			const namedPart = trimmedClause.slice(braceIdx).replace(/\s+as\s+/g, ": ");
-			const names = [defName, ..._extractDeclaredNames(namedPart)];
-			for (const n of names) recordUserGlobal(n);
-			const assignGlobals = names.map((n) => `globalThis.${n} = ${n};`).join(" ");
-			return `const __mod_${defName} = await globalThis.__apollo_import__(${specifier}); const ${defName} = __mod_${defName}.default ?? __mod_${defName}; const ${namedPart} = __mod_${defName}; ${assignGlobals}`;
-		},
-	);
+			if (ch === "}") {
+				if (interpBraceDepth === 0) return i + 1;
+				interpBraceDepth--;
+				i++;
+				continue;
+			}
+		}
+		i++;
+	}
+	return i;
 }
 
+/** 1 = executable code, 0 = string / template text / comment. */
+function _codeMask(code: string): Uint8Array {
+	const mask = new Uint8Array(code.length).fill(1);
+	if (code.length > 0) _lexCodeRegion(code, mask, 0, code.length, false);
+	return mask;
+}
+
+function _rewriteStaticImportClause(clause: string, specifier: string): string {
+	const trimmedClause = clause.trim();
+	if (trimmedClause.startsWith("* as ")) {
+		const nsName = trimmedClause.slice(5).trim();
+		recordUserGlobal(nsName);
+		return `const ${nsName} = (globalThis.${nsName} = await globalThis.__apollo_import__(${specifier}));`;
+	}
+	if (trimmedClause.startsWith("{") && trimmedClause.endsWith("}")) {
+		const inner = trimmedClause.slice(1, -1).replace(/\s+as\s+/g, ": ");
+		const names = _extractDeclaredNames(inner);
+		const assignGlobals = names.map((n) => `globalThis.${n} = ${n};`).join(" ");
+		for (const n of names) recordUserGlobal(n);
+		return `const { ${inner} } = await globalThis.__apollo_import__(${specifier}); ${assignGlobals}`;
+	}
+	// Default import or default + named import
+	const braceIdx = trimmedClause.indexOf("{");
+	if (braceIdx === -1) {
+		const defName = trimmedClause;
+		recordUserGlobal(defName);
+		return `const __mod_${defName} = await globalThis.__apollo_import__(${specifier}); const ${defName} = (globalThis.${defName} = __mod_${defName}.default ?? __mod_${defName});`;
+	}
+	const defName = trimmedClause.slice(0, braceIdx).replace(/,$/, "").trim();
+	const namedPart = trimmedClause.slice(braceIdx).replace(/\s+as\s+/g, ": ");
+	const names = [defName, ..._extractDeclaredNames(namedPart)];
+	for (const n of names) recordUserGlobal(n);
+	const assignGlobals = names.map((n) => `globalThis.${n} = ${n};`).join(" ");
+	return `const __mod_${defName} = await globalThis.__apollo_import__(${specifier}); const ${defName} = __mod_${defName}.default ?? __mod_${defName}; const ${namedPart} = __mod_${defName}; ${assignGlobals}`;
+}
+
+function _transformTopLevelImports(code: string): string {
+	// 1. Rewrite dynamic `globalThis.__apollo_import__(...)` calls in real code into `globalThis.__apollo_import__(...)`
+	// so Node VM does not throw ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING. Matches inside
+	// strings, template text, or comments are left untouched.
+	const dynamicRe = /\bimport\s*\(([^)]+)\)/g;
+	const codeMask = _codeMask(code);
+	let transformed = "";
+	let lastEnd = 0;
+	for (let m = dynamicRe.exec(code); m !== null; m = dynamicRe.exec(code)) {
+		const start = m.index;
+		const end = start + m[0]!.length;
+		if (codeMask[start] !== 1) {
+			transformed += code.slice(lastEnd, end);
+			lastEnd = end;
+			continue;
+		}
+		// When the import is directly followed by `.member` or `(args)`, the replacement
+		// must be a self-contained unit so the chain binds to the resolved module rather
+		// than to the loader call itself.
+		const tail = code.slice(end);
+		const chain = /^\s*[.(]/.test(tail);
+		const awaited = /\bawait\s*$/.test(code.slice(lastEnd, start));
+		const base = `globalThis.__apollo_import__(${m[1]!})`;
+		const replacement = chain ? (awaited ? `(await ${base})` : `(${base})`) : base;
+		transformed += code.slice(lastEnd, start) + replacement;
+		lastEnd = end;
+	}
+	transformed += code.slice(lastEnd);
+
+	// 2. Rewrite static `import ... from "spec"` lines in real code into
+	// `await globalThis.__apollo_import__("spec")` equivalents.
+	const staticRe = /^\s*import\s+([\s\S]*?)\s+from\s+(['\"][^'\"]+['\"])\s*;?/gm;
+	const staticMask = _codeMask(transformed);
+	let out = "";
+	let outEnd = 0;
+	for (let m = staticRe.exec(transformed); m !== null; m = staticRe.exec(transformed)) {
+		const start = m.index;
+		if (staticMask[start] === 1) {
+			out += transformed.slice(outEnd, start);
+			out += _rewriteStaticImportClause(m[1]!, m[2]!);
+			outEnd = start + m[0]!.length;
+			continue;
+		}
+		// Match started inside a string, template text, or comment. The lazy clause can
+		// cross code boundaries, so a real import further along may already be consumed;
+		// resume just past this `import` keyword so later matches are not skipped.
+		const kwEnd = start + m[0]!.indexOf("import") + 6;
+		out += transformed.slice(outEnd, kwEnd);
+		outEnd = kwEnd;
+		staticRe.lastIndex = kwEnd;
+	}
+	out += transformed.slice(outEnd);
+	return out;
+}
 function _isExpressionExecutable(expr: string): boolean {
 	const trimmed = expr.trim().replace(/;+\s*$/, "");
 	if (!trimmed) return false;

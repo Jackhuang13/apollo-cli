@@ -4,6 +4,7 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import readline from "node:readline";
 import { fileURLToPath } from "node:url";
+import { writeFileSync, rmSync } from "node:fs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const RUNTIME_MOD_PATH = path.resolve(__dirname, "../src/rlm/mod.ts");
@@ -257,6 +258,111 @@ test("repl resolves dynamic imports of node: builtins (regression: dynamic impor
 		const imp = await runCell(repl, "imp", code);
 		assert.equal(imp.status, "ok");
 		assert.equal(imp.resultText, "'function'");
+	} finally {
+		repl.close();
+	}
+});
+
+test("import rewriter: static import of node: builtin resolves (regression)", async () => {
+	const repl = new ReplTestDriver();
+	try {
+		await repl.nextEvent();
+		const res = await runCell(repl, "s1", "import { join } from \"node:path\"; join(\"a\", \"b\")");
+		assert.equal(res.status, "ok", res.errorText || res.resultText);
+		assert.equal(res.resultText, "'a/b'");
+	} finally {
+		repl.close();
+	}
+});
+
+test("import rewriter: dynamic-import text inside strings survives write to file (regression: A2)", async () => {
+	const repl = new ReplTestDriver();
+	try {
+		await repl.nextEvent();
+		const p = "/tmp/a2-dyn-" + Date.now() + "-" + Math.random().toString(36).slice(2) + ".txt";
+		const cell =
+			"import { writeFileSync, readFileSync, rmSync } from \"node:fs\";\n" +
+			"const s = 'x = await import(\"node:fs\");'\n" +
+			"writeFileSync(" + JSON.stringify(p) + ", s);\n" +
+			"const ok = readFileSync(" + JSON.stringify(p) + ", \"utf8\") === (\"x = await \" + \"im\" + \"port(\\\"node:fs\\\");\");\n" +
+			"rmSync(" + JSON.stringify(p) + ");\n" +
+			"ok";
+		const res = await runCell(repl, "a2d", cell);
+		assert.equal(res.status, "ok", res.errorText || res.resultText);
+		assert.equal(res.resultText, "true");
+	} finally {
+		repl.close();
+	}
+});
+
+test("import rewriter: static-import lines inside template text survive write to file (regression: A2)", async () => {
+	const repl = new ReplTestDriver();
+	try {
+		await repl.nextEvent();
+		const p = "/tmp/a2-stat-" + Date.now() + "-" + Math.random().toString(36).slice(2) + ".ts";
+		const cell =
+			"import { writeFileSync, readFileSync, rmSync } from \"node:fs\";\n" +
+			"const doc = [\`\n" +
+			"import { readFileSync } from 'node:fs';\n" +
+			"const x = 1;\`];\n" +
+			"writeFileSync(" + JSON.stringify(p) + ", doc.join(\"\"));\n" +
+			"const ok = readFileSync(" + JSON.stringify(p) + ", \"utf8\").includes(\"im\" + \"port { readFileSync } from 'node:fs'\");\n" +
+			"rmSync(" + JSON.stringify(p) + ");\n" +
+			"ok";
+		const res = await runCell(repl, "a2s", cell);
+		assert.equal(res.status, "ok", res.errorText || res.resultText);
+		assert.equal(res.resultText, "true");
+	} finally {
+		repl.close();
+	}
+});
+
+test("import rewriter: awaited dynamic-import member chain resolves (regression: A3)", async () => {
+	const repl = new ReplTestDriver();
+	const p = "/tmp/a3-chain-" + Date.now() + "-" + Math.random().toString(36).slice(2) + ".txt";
+	try {
+		await repl.nextEvent();
+		writeFileSync(p, "hello");
+		const cell =
+			"import { readFileSync } from \"node:fs\";\n" +
+			"const v = await import(\"node:fs\").readFileSync(" + JSON.stringify(p) + ", \"utf8\"); v";
+		const res = await runCell(repl, "a3", cell);
+		assert.equal(res.status, "ok", res.errorText || res.resultText);
+		assert.equal(res.resultText, "'hello'");
+	} finally {
+		rmSync(p, { force: true });
+		repl.close();
+	}
+});
+
+test("import rewriter: files written from a cell run in spawned node with real imports (regression: leak)", async () => {
+	const repl = new ReplTestDriver();
+	const p = "/tmp/a2-child-" + Date.now() + "-" + Math.random().toString(36).slice(2) + ".mjs";
+	try {
+		await repl.nextEvent();
+		const cell =
+			"import { writeFileSync, rmSync } from \"node:fs\";\n" +
+			"writeFileSync(" + JSON.stringify(p) + ", 'const fs = await import(\"node:fs\");\\nconsole.log(\"child:\" + fs.existsSync(\"/etc/hostname\"));');\n" +
+			"const r = await bash(\"node \" + " + JSON.stringify(p) + ");\n" +
+			"rmSync(" + JSON.stringify(p) + ");\n" +
+			"(r.exit_code === 0 ? \"ok\" : \"fail\") + '|' + r.output.trim()";
+		const res = await runCell(repl, "child", cell);
+		assert.equal(res.status, "ok", res.errorText || res.resultText);
+		assert.equal(res.resultText, "'ok|child:true'");
+	} finally {
+		rmSync(p, { force: true });
+		repl.close();
+	}
+});
+
+test("import rewriter: import syntax inside comments does not execute or break the cell (guard)", async () => {
+	const repl = new ReplTestDriver();
+	try {
+		await repl.nextEvent();
+		const cell = "// import('node:fs') and import x from 'y' stay comments\n1 + 1";
+		const res = await runCell(repl, "c1", cell);
+		assert.equal(res.status, "ok", res.errorText || res.resultText);
+		assert.equal(res.resultText, "2");
 	} finally {
 		repl.close();
 	}
