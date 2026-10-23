@@ -84,16 +84,16 @@ test("subagent and model APIs unpack host response shapes correctly", async () =
 		assert.equal(session.active_session_id, "active-root");
 		assert.equal(session.name, "researcher");
 
-		const subagents = await list_subagents();
+		const subagents = (await list_subagents()) as any[];
 		assert.equal(subagents.length, 1);
 		assert.equal(subagents[0].rlm_child_id, "sub-123");
 		assert.equal(subagents[0].name, "worker");
 
-		const models = await find_models("deepseek");
+		const models = (await find_models("deepseek")) as any[];
 		assert.equal(models.length, 1);
 		assert.equal(models[0].id, "deepseek-v4");
 
-		const delResult = await delete_subagent("worker");
+		const delResult = (await delete_subagent("worker")) as any;
 		assert.equal(delResult.deleted, "worker");
 	} finally {
 		repl._setHostReplyResolver(null);

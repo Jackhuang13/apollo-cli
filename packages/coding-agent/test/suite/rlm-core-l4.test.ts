@@ -114,7 +114,7 @@ class L4Host {
 	}
 
 	send(frame: Frame): void {
-		this.child?.stdin.write(JSON.stringify(frame) + "\n");
+		this.child?.stdin.write(`${JSON.stringify(frame)}\n`);
 	}
 	reply(id: string, data: Frame): void {
 		this.send({ type: "host_reply", id, data });
@@ -258,7 +258,7 @@ describe("rlm L4 robustness: real runtime chaos", () => {
 				const req = await host.waitFrame((f) => f.event === "host_request" && (f.data as Frame).type === "rlm.run");
 				host.reply(String(req.id), {
 					status: "ok",
-					result: { rlm_child_id: "sub-l4-" + i, session_name: "l4c" + i },
+					result: { rlm_child_id: `sub-l4-${i}`, session_name: `l4c${i}` },
 				});
 			}
 			const result = await host.waitFrame((f) => f.event === "result" && f.id === "l4o3");

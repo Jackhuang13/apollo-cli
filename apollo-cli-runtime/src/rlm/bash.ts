@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { closeSync, fsyncSync, openSync, readFileSync, writeSync } from "node:fs";
+import { closeSync, fsyncSync, openSync, readdirSync, readFileSync, writeSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
@@ -12,6 +12,7 @@ const COMPLETION_SUFFIX = Buffer.from("\x1f");
 const CANCEL_TERM_GRACE_MS = 500;
 const CANCEL_KILL_WAIT_MS = 2000;
 const COMPLETION_NOTICE_COMMAND_CAP = 1000;
+export const DEFAULT_BASH_TIMEOUT_SECONDS = 600;
 
 export const BASH_ACTIVITY_MIME = "application/vnd.apollo-cli.bash-activity+json";
 export const LEGACY_BASH_ACTIVITY_MIME = "application/vnd.prime-agent.bash-activity+json";
@@ -142,6 +143,7 @@ function withPrefix(command: string): string {
 function childEnv(): NodeJS.ProcessEnv {
 	return {
 		...process.env,
+		APOLLO_SESSION_KERNEL_PID: String(process.pid),
 		NO_COLOR: "1",
 		TERM: "dumb",
 		CLICOLOR: "0",
@@ -316,6 +318,7 @@ export class BashHandle implements PromiseLike<BashResult> {
 	private _reapWaiters: Array<() => void> = [];
 	private _timeoutTimer: ReturnType<typeof setTimeout> | null = null;
 	private _forceKillTimer: ReturnType<typeof setTimeout> | null = null;
+	private _heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
 	constructor(command: string, options?: BashOptions) {
 		this.command = command;
@@ -342,8 +345,15 @@ export class BashHandle implements PromiseLike<BashResult> {
 			);
 		}
 
-		if (options?.timeout !== undefined && options.timeout !== null && options.timeout > 0) {
-			const timeoutMs = options.timeout <= 600 ? options.timeout * 1000 : options.timeout;
+		const effectiveTimeout =
+			options?.timeout === undefined
+				? DEFAULT_BASH_TIMEOUT_SECONDS
+				: options.timeout !== null && options.timeout > 0 && Number.isFinite(options.timeout)
+					? options.timeout
+					: null;
+
+		if (effectiveTimeout !== null) {
+			const timeoutMs = effectiveTimeout <= 600 ? effectiveTimeout * 1000 : effectiveTimeout;
 			this._timeoutTimer = setTimeout(() => {
 				if (!this._done) {
 					this.kill(0.5);
@@ -351,6 +361,26 @@ export class BashHandle implements PromiseLike<BashResult> {
 			}, timeoutMs);
 			this._timeoutTimer.unref?.();
 		}
+
+		// Heartbeat for long-running commands (every 30 seconds while running)
+		this._heartbeatTimer = setInterval(() => {
+			if (this._done || this._reaped) {
+				if (this._heartbeatTimer) clearInterval(this._heartbeatTimer);
+				this._heartbeatTimer = null;
+				return;
+			}
+			if (replBridge?.isActive()) {
+				const elapsedSec = Math.round((performance.now() - this._started) / 1000);
+				replBridge.sendRawEvent({
+					event: "bash_heartbeat",
+					pid: this._pid,
+					elapsed: elapsedSec,
+					running: this.running,
+					descendants: this.descendants().length,
+				});
+			}
+		}, 30_000);
+		this._heartbeatTimer.unref?.();
 
 		let stdoutEnded = false;
 		let stderrEnded = false;
@@ -443,6 +473,62 @@ export class BashHandle implements PromiseLike<BashResult> {
 		return this._done ? this._result : null;
 	}
 
+	/**
+	 * Returns all live descendant processes spawned under this bash handle
+	 * (excluding the current session kernel PID to prevent accidental termination).
+	 */
+	descendants(): Array<{ pid: number; ppid: number; comm?: string }> {
+		this._released = true;
+		if (this._reaped || this._pid <= 0) return [];
+		const rootPid = this._pid;
+		const parentMap = new Map<number, number>();
+		const commMap = new Map<number, string>();
+
+		if (IS_POSIX) {
+			try {
+				const entries = readdirSync("/proc");
+				for (const entry of entries) {
+					if (!/^\d+$/.test(entry)) continue;
+					const pid = Number.parseInt(entry, 10);
+					if (pid === process.pid) continue; // Safety guard: ignore current kernel process
+					try {
+						const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+						const rpar = stat.lastIndexOf(")");
+						if (rpar !== -1) {
+							const comm = stat.slice(stat.indexOf("(") + 1, rpar);
+							const fields = stat.slice(rpar + 2).split(" ");
+							const ppid = Number.parseInt(fields[1] || "", 10);
+							if (Number.isFinite(ppid)) {
+								parentMap.set(pid, ppid);
+								commMap.set(pid, comm);
+							}
+						}
+					} catch {
+						// Process may have exited
+					}
+				}
+			} catch {
+				// /proc not mounted or inaccessible
+			}
+		}
+
+		const queue = [rootPid];
+		const descendants: Array<{ pid: number; ppid: number; comm?: string }> = [];
+		const visited = new Set<number>([rootPid]);
+
+		while (queue.length > 0) {
+			const curr = queue.shift()!;
+			for (const [pid, ppid] of parentMap.entries()) {
+				if (ppid === curr && !visited.has(pid)) {
+					visited.add(pid);
+					descendants.push({ pid, ppid, comm: commMap.get(pid) });
+					queue.push(pid);
+				}
+			}
+		}
+		return descendants;
+	}
+
 	kill(gracePeriod = 5.0): void {
 		this._released = true;
 		if (this._reaped) return;
@@ -485,6 +571,10 @@ export class BashHandle implements PromiseLike<BashResult> {
 			clearTimeout(this._timeoutTimer);
 			this._timeoutTimer = null;
 		}
+		if (this._heartbeatTimer) {
+			clearInterval(this._heartbeatTimer);
+			this._heartbeatTimer = null;
+		}
 		const duration = (performance.now() - this._started) / 1000;
 		const output = this._buffer.text();
 		this._result = {
@@ -505,6 +595,10 @@ export class BashHandle implements PromiseLike<BashResult> {
 		if (this._forceKillTimer) {
 			clearTimeout(this._forceKillTimer);
 			this._forceKillTimer = null;
+		}
+		if (this._heartbeatTimer) {
+			clearInterval(this._heartbeatTimer);
+			this._heartbeatTimer = null;
 		}
 		if (IS_POSIX) {
 			signalGroup(this._pid, "SIGKILL");

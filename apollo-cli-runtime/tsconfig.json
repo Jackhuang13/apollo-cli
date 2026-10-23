@@ -1,0 +1,12 @@
+{
+	"extends": "../tsconfig.base.json",
+	"compilerOptions": {
+		"noEmit": true,
+		"allowImportingTsExtensions": true,
+		"moduleResolution": "Bundler",
+		"module": "ESNext",
+		"target": "ESNext"
+	},
+	"include": ["src/**/*", "test/**/*"],
+	"exclude": ["src/rlm/vendor/**"]
+}

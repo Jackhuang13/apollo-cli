@@ -1,0 +1,2 @@
+- Added AST-based parsing and import rewriting in IScript runtime with vendored oxc-parser, replacing regex scanner and preventing string/template literal leaks.
+- Added 600s default timeout, process group termination, child process tracking, and heartbeat monitoring for bash operations.

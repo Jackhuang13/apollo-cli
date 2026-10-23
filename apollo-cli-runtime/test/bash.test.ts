@@ -32,3 +32,28 @@ test("bash() supports killing running process", async () => {
 	const res = await handle;
 	assert.notEqual(res.exit_code, 0);
 });
+
+test("bash() tracks descendant processes and enforces timeout", async () => {
+	const handle = bash("sleep 10 & sleep 11 & wait", { timeout: 0.3 });
+	assert.equal(handle.poll(), null);
+
+	// Wait briefly for subshells to spawn
+	await new Promise((resolve) => setTimeout(resolve, 100));
+
+	const descendants = handle.descendants();
+	assert.ok(Array.isArray(descendants));
+	if (process.platform !== "win32") {
+		// Should identify sleep descendants
+		assert.ok(descendants.length >= 1, `Expected descendants, got: ${JSON.stringify(descendants)}`);
+		assert.ok(descendants.some((d) => d.comm?.includes("sleep")));
+	}
+
+	// Process should be terminated by timeout
+	const res = await handle;
+	assert.notEqual(res.exit_code, 0);
+
+	// Wait briefly for reap cleanup and check descendants are terminated
+	await new Promise((resolve) => setTimeout(resolve, 100));
+	const afterReap = handle.descendants();
+	assert.equal(afterReap.length, 0);
+});

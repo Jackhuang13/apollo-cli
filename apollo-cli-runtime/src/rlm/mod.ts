@@ -270,7 +270,7 @@ export async function progress_note(message: string): Promise<ProgressNoteResult
 	if (stripped.length > RLM_PROGRESS_NOTE_MAX_LENGTH) {
 		throw new Error(`message must be at most ${RLM_PROGRESS_NOTE_MAX_LENGTH} characters`);
 	}
-	return (await op("rlm.progress.note", { message: stripped })) as ProgressNoteResult;
+	return (await op("rlm.progress.note", { message: stripped })) as unknown as ProgressNoteResult;
 }
 
 export const progressNote = progress_note;

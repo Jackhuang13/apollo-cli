@@ -227,6 +227,22 @@ test("repl keeps expressions wrapped across newlines as one statement (regressio
 		const guard = await runCell(repl, "guard", "let x = 1\nlet y = 2\nfunction f() {\n  return 7;\n}\nf() + x + y");
 		assert.equal(guard.status, "ok");
 		assert.equal(guard.resultText, "10");
+
+		const div = await runCell(repl, "div", "let n = 10\n/ 4\nn");
+		assert.equal(div.status, "ok");
+		assert.equal(div.resultText, "2.5");
+
+		const divchain = await runCell(repl, "divchain", "let a = 8\n/ 2\n- 1\na");
+		assert.equal(divchain.status, "ok");
+		assert.equal(divchain.resultText, "3");
+
+		const re = await runCell(repl, "re", "const n = 1\n/x/.test(\"x\")");
+		assert.equal(re.status, "ok");
+		assert.equal(re.resultText, "true");
+
+		const reStmt = await runCell(repl, "restmt", "const re = /x/\n/y/.test(\"y\")");
+		assert.equal(reStmt.status, "ok");
+		assert.equal(reStmt.resultText, "true");
 	} finally {
 		repl.close();
 	}

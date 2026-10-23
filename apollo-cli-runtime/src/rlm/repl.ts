@@ -10,6 +10,7 @@ import * as v8 from "node:v8";
 import * as vm from "node:vm";
 
 import { _kill_live_handles, _registerReplBridge } from "./bash.ts";
+import { parseSync } from "./vendor/parser.js";
 
 export const PROTOCOL_VERSION = 3;
 export const DEFAULT_SNAPSHOT_MAX_BYTES = 256 * 1024 * 1024;
@@ -349,200 +350,65 @@ interface TopLevelStatement {
  * template literals, comments, regex literals, and nested brackets/braces/parens.
  */
 function _splitTopLevelStatements(code: string): TopLevelStatement[] {
+	let parsed: any;
+	try {
+		parsed = parseSync(code, { sourceFilename: "cell.ts" });
+	} catch {
+		parsed = null;
+	}
+
+	if (parsed && parsed.errors?.length === 0 && Array.isArray(parsed.program?.body) && parsed.program.body.length > 0) {
+		const stmts = parsed.program.body;
+		return stmts.map((s: any) => ({
+			text: code.slice(s.start, s.end),
+			start: s.start,
+			end: s.end,
+		}));
+	}
+
+	// Incremental parser fallback for cell ASI boundaries (e.g. statement followed by `/regex/`)
+	const lines = code.split("\n");
 	const statements: TopLevelStatement[] = [];
-	let parenDepth = 0;
-	let braceDepth = 0;
-	let bracketDepth = 0;
-	let stmtStart = 0;
-	let i = 0;
-	const len = code.length;
+	let buffer = "";
+	let bufStart = 0;
+	let currentOffset = 0;
 
-	const pushStatement = (end: number) => {
-		const raw = code.slice(stmtStart, end);
-		if (raw.trim().length > 0) {
-			statements.push({ text: raw, start: stmtStart, end });
-		}
-		stmtStart = end;
-	};
-
-	while (i < len) {
-		const ch = code[i]!;
-		const next = code[i + 1];
-
-		// Line comment
-		if (ch === "/" && next === "/") {
-			i += 2;
-			while (i < len && code[i] !== "\n") i++;
-			continue;
+	for (let idx = 0; idx < lines.length; idx++) {
+		const line = lines[idx]!;
+		const candidate = buffer ? `${buffer}\n${line}` : line;
+		let valid = false;
+		try {
+			const p = parseSync(candidate, { sourceFilename: "chunk.ts" });
+			if (p.errors.length === 0) valid = true;
+		} catch {
+			valid = false;
 		}
 
-		// Block comment
-		if (ch === "/" && next === "*") {
-			i += 2;
-			while (i < len && !(code[i] === "*" && code[i + 1] === "/")) i++;
-			i += 2;
-			continue;
-		}
-
-		// Single or double quoted string
-		if (ch === "'" || ch === '"') {
-			const quote = ch;
-			i++;
-			while (i < len && code[i] !== quote) {
-				if (code[i] === "\\") i += 2;
-				else i++;
-			}
-			i++;
-			continue;
-		}
-
-		// Template literal
-		if (ch === "`") {
-			i++;
-			let templateBraceDepth = 0;
-			while (i < len) {
-				if (code[i] === "\\") {
-					i += 2;
-					continue;
-				}
-				if (code[i] === "`" && templateBraceDepth === 0) {
-					i++;
-					break;
-				}
-				if (code[i] === "$" && code[i + 1] === "{") {
-					templateBraceDepth++;
-					i += 2;
-					continue;
-				}
-				if (code[i] === "}" && templateBraceDepth > 0) {
-					templateBraceDepth--;
-					i++;
-					continue;
-				}
-				i++;
-			}
-			continue;
-		}
-
-		if (ch === "(") {
-			parenDepth++;
-			i++;
-			continue;
-		}
-		if (ch === ")") {
-			parenDepth = Math.max(0, parenDepth - 1);
-			i++;
-			continue;
-		}
-		if (ch === "[") {
-			bracketDepth++;
-			i++;
-			continue;
-		}
-		if (ch === "]") {
-			bracketDepth = Math.max(0, bracketDepth - 1);
-			i++;
-			continue;
-		}
-		if (ch === "{") {
-			braceDepth++;
-			i++;
-			continue;
-		}
-		if (ch === "}") {
-			braceDepth = Math.max(0, braceDepth - 1);
-			i++;
-			if (parenDepth === 0 && braceDepth === 0 && bracketDepth === 0) {
-				// Check if followed by newline or semicolon at top-level block end
-				let lookahead = i;
-				while (lookahead < len && (code[lookahead] === " " || code[lookahead] === "\t" || code[lookahead] === "\r")) {
-					lookahead++;
-				}
-				if (lookahead < len && code[lookahead] === ";") {
-					i = lookahead + 1;
-					pushStatement(i);
-					continue;
-				}
-			}
-			continue;
-		}
-
-		if (parenDepth === 0 && braceDepth === 0 && bracketDepth === 0) {
-			if (ch === ";") {
-				i++;
-				pushStatement(i);
+		if (valid && candidate.trim().length > 0) {
+			const nextLine = lines[idx + 1];
+			const isContinuation =
+				nextLine !== undefined &&
+				(/^(?:\.|\`|\?|,|[+\-*%&|^=<>]|\bin\b|\binstanceof\b)/.test(nextLine.trim()) ||
+					/^\/\s/.test(nextLine.trim()));
+			if (!isContinuation) {
+				statements.push({
+					text: candidate,
+					start: bufStart,
+					end: currentOffset + line.length,
+				});
+				buffer = "";
+				bufStart = currentOffset + line.length + 1;
+				currentOffset += line.length + 1;
 				continue;
 			}
-			if (ch === "\n") {
-				// Check if statement up to here is syntactically complete
-				const candidate = code.slice(stmtStart, i).trim();
-				if (
-					candidate.length > 0 &&
-					_isSyntacticallyCompleteStatement(candidate) &&
-					!_nextLineContinuesExpression(code, i)
-				) {
-					i++;
-					pushStatement(i);
-					continue;
-				}
-			}
 		}
-
-		i++;
+		buffer = candidate;
+		currentOffset += line.length + 1;
 	}
-
-	if (stmtStart < len) {
-		pushStatement(len);
+	if (buffer.trim().length > 0) {
+		statements.push({ text: buffer, start: bufStart, end: code.length });
 	}
-
 	return statements;
-}
-
-function _isSyntacticallyCompleteStatement(stmt: string): boolean {
-	// Statements ending in binary operators or continuation tokens are not complete
-	if (/[+\-*/%&|^=<>!,?:.]\s*$/.test(stmt)) {
-		return false;
-	}
-	try {
-		new vm.Script(`(async () => {\n${stmt}\n})`, { filename: "<check>" });
-		return true;
-	} catch {
-		return false;
-	}
-}
-const _CONTINUATION_LINE_HEAD = /^(?:\.|\`|\?|,|[+\-*%&|^=<>]|\bin\b|\binstanceof\b)/;
-
-/**
- * True when the first significant token after `pos` (skipping blanks, line
- * comments, and block comments) can continue the expression ending there — a
- * leading `.` (member access, not a numeric fraction), backtick, `?`, `,`,
- * a binary-operator character, or the `in` / `instanceof` keywords. V8
- * inserts no automatic semicolon before such tokens, so the newline must not
- * end the statement (e.g. a method chain wrapped across lines).
- */
-function _nextLineContinuesExpression(code: string, from: number): boolean {
-	let i = from;
-	while (i < code.length) {
-		const ch = code[i]!;
-		if (ch === " " || ch === "\t" || ch === "\r" || ch === "\n") {
-			i++;
-			continue;
-		}
-		if (ch === "/" && code[i + 1] === "/") {
-			while (i < code.length && code[i] !== "\n") i++;
-			continue;
-		}
-		if (ch === "/" && code[i + 1] === "*") {
-			i += 2;
-			while (i < code.length && !(code[i] === "*" && code[i + 1] === "/")) i++;
-			i += 2;
-			continue;
-		}
-		break;
-	}
-	if (i >= code.length) return false;
-	if (code[i] === "." && code[i + 1] >= "0" && code[i + 1] <= "9") return false;
-	return _CONTINUATION_LINE_HEAD.test(code.slice(i));
 }
 
 function _extractDeclaredNames(pattern: string): string[] {
@@ -614,176 +480,128 @@ function _preprocessBangLines(code: string): string {
 	return out.join("\n");
 }
 
-/**
- * Lex a code region starting at `i`, marking every non-code character
- * (strings, template text, comments) as 0 in `mask`; code stays 1. Template
- * interpolations are lexed recursively as code regions. Returns the index
- * just past the region: `limit` for a top-level region, or just past the
- * top-level closing `}` of an interpolation.
- */
-function _lexCodeRegion(code: string, mask: Uint8Array, i: number, limit: number, inInterpolation: boolean): number {
-	let interpBraceDepth = 0;
-	while (i < limit) {
-		const ch = code[i]!;
-		const next = code[i + 1];
-		if (ch === "/" && next === "/") {
-			const start = i;
-			i += 2;
-			while (i < limit && code[i] !== "\n") i++;
-			for (let k = start; k < i; k++) mask[k] = 0;
-			continue;
-		}
-		if (ch === "/" && next === "*") {
-			const start = i;
-			i += 2;
-			while (i + 1 < limit && !(code[i] === "*" && code[i + 1] === "/")) i++;
-			i = Math.min(limit, i + 2);
-			for (let k = start; k < i; k++) mask[k] = 0;
-			continue;
-		}
-		if (ch === "'" || ch === '"') {
-			const start = i;
-			const quote = ch;
-			i++;
-			while (i < limit && code[i] !== quote) {
-				if (code[i] === "\\") i += 2;
-				else i++;
-			}
-			i = Math.min(limit, i + 1);
-			for (let k = start; k < i; k++) mask[k] = 0;
-			continue;
-		}
-		if (ch === "`") {
-			mask[i] = 0;
-			i++;
-			while (i < limit) {
-				if (code[i] === "\\") {
-					mask[i] = 0;
-					if (i + 1 < limit) mask[i + 1] = 0;
-					i += 2;
-					continue;
-				}
-				if (code[i] === "`") {
-					mask[i] = 0;
-					i++;
-					break;
-				}
-				if (code[i] === "$" && code[i + 1] === "{") {
-					i += 2;
-					i = _lexCodeRegion(code, mask, i, limit, true);
-					continue;
-				}
-				mask[i] = 0;
-				i++;
-			}
-			continue;
-		}
-		if (inInterpolation) {
-			if (ch === "{") {
-				interpBraceDepth++;
-				i++;
-				continue;
-			}
-			if (ch === "}") {
-				if (interpBraceDepth === 0) return i + 1;
-				interpBraceDepth--;
-				i++;
-				continue;
-			}
-		}
-		i++;
-	}
-	return i;
-}
-
-/** 1 = executable code, 0 = string / template text / comment. */
-function _codeMask(code: string): Uint8Array {
-	const mask = new Uint8Array(code.length).fill(1);
-	if (code.length > 0) _lexCodeRegion(code, mask, 0, code.length, false);
-	return mask;
-}
-
-function _rewriteStaticImportClause(clause: string, specifier: string): string {
-	const trimmedClause = clause.trim();
-	if (trimmedClause.startsWith("* as ")) {
-		const nsName = trimmedClause.slice(5).trim();
-		recordUserGlobal(nsName);
-		return `const ${nsName} = (globalThis.${nsName} = await globalThis.__apollo_import__(${specifier}));`;
-	}
-	if (trimmedClause.startsWith("{") && trimmedClause.endsWith("}")) {
-		const inner = trimmedClause.slice(1, -1).replace(/\s+as\s+/g, ": ");
-		const names = _extractDeclaredNames(inner);
-		const assignGlobals = names.map((n) => `globalThis.${n} = ${n};`).join(" ");
-		for (const n of names) recordUserGlobal(n);
-		return `const { ${inner} } = await globalThis.__apollo_import__(${specifier}); ${assignGlobals}`;
-	}
-	// Default import or default + named import
-	const braceIdx = trimmedClause.indexOf("{");
-	if (braceIdx === -1) {
-		const defName = trimmedClause;
-		recordUserGlobal(defName);
-		return `const __mod_${defName} = await globalThis.__apollo_import__(${specifier}); const ${defName} = (globalThis.${defName} = __mod_${defName}.default ?? __mod_${defName});`;
-	}
-	const defName = trimmedClause.slice(0, braceIdx).replace(/,$/, "").trim();
-	const namedPart = trimmedClause.slice(braceIdx).replace(/\s+as\s+/g, ": ");
-	const names = [defName, ..._extractDeclaredNames(namedPart)];
-	for (const n of names) recordUserGlobal(n);
-	const assignGlobals = names.map((n) => `globalThis.${n} = ${n};`).join(" ");
-	return `const __mod_${defName} = await globalThis.__apollo_import__(${specifier}); const ${defName} = __mod_${defName}.default ?? __mod_${defName}; const ${namedPart} = __mod_${defName}; ${assignGlobals}`;
-}
-
 function _transformTopLevelImports(code: string): string {
-	// 1. Rewrite dynamic `globalThis.__apollo_import__(...)` calls in real code into `globalThis.__apollo_import__(...)`
-	// so Node VM does not throw ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING. Matches inside
-	// strings, template text, or comments are left untouched.
-	const dynamicRe = /\bimport\s*\(([^)]+)\)/g;
-	const codeMask = _codeMask(code);
-	let transformed = "";
-	let lastEnd = 0;
-	for (let m = dynamicRe.exec(code); m !== null; m = dynamicRe.exec(code)) {
-		const start = m.index;
-		const end = start + m[0]!.length;
-		if (codeMask[start] !== 1) {
-			transformed += code.slice(lastEnd, end);
-			lastEnd = end;
-			continue;
-		}
-		// When the import is directly followed by `.member` or `(args)`, the replacement
-		// must be a self-contained unit so the chain binds to the resolved module rather
-		// than to the loader call itself.
-		const tail = code.slice(end);
-		const chain = /^\s*[.(]/.test(tail);
-		const awaited = /\bawait\s*$/.test(code.slice(lastEnd, start));
-		const base = `globalThis.__apollo_import__(${m[1]!})`;
-		const replacement = chain ? (awaited ? `(await ${base})` : `(${base})`) : base;
-		transformed += code.slice(lastEnd, start) + replacement;
-		lastEnd = end;
+	let parsed: any;
+	try {
+		parsed = parseSync(code, { sourceFilename: "cell.ts" });
+	} catch {
+		parsed = null;
 	}
-	transformed += code.slice(lastEnd);
 
-	// 2. Rewrite static `import ... from "spec"` lines in real code into
-	// `await globalThis.__apollo_import__("spec")` equivalents.
-	const staticRe = /^\s*import\s+([\s\S]*?)\s+from\s+(['\"][^'\"]+['\"])\s*;?/gm;
-	const staticMask = _codeMask(transformed);
-	let out = "";
-	let outEnd = 0;
-	for (let m = staticRe.exec(transformed); m !== null; m = staticRe.exec(transformed)) {
-		const start = m.index;
-		if (staticMask[start] === 1) {
-			out += transformed.slice(outEnd, start);
-			out += _rewriteStaticImportClause(m[1]!, m[2]!);
-			outEnd = start + m[0]!.length;
-			continue;
-		}
-		// Match started inside a string, template text, or comment. The lazy clause can
-		// cross code boundaries, so a real import further along may already be consumed;
-		// resume just past this `import` keyword so later matches are not skipped.
-		const kwEnd = start + m[0]!.indexOf("import") + 6;
-		out += transformed.slice(outEnd, kwEnd);
-		outEnd = kwEnd;
-		staticRe.lastIndex = kwEnd;
+	if (!parsed || parsed.errors?.length > 0 || !parsed.program) {
+		return code;
 	}
-	out += transformed.slice(outEnd);
+
+	const replacements: Array<{
+		start: number;
+		end: number;
+		type: "dynamic" | "static";
+		node: any;
+	}> = [];
+
+	// 1. Dynamic import expressions
+	function findDynamic(node: any): void {
+		if (!node || typeof node !== "object") return;
+		if (node.type === "ImportExpression") {
+			replacements.push({
+				start: node.start,
+				end: node.end,
+				type: "dynamic",
+				node,
+			});
+		}
+		for (const key of Object.keys(node)) {
+			const val = node[key];
+			if (Array.isArray(val)) {
+				for (const item of val) findDynamic(item);
+			} else if (val && typeof val === "object") {
+				findDynamic(val);
+			}
+		}
+	}
+
+	findDynamic(parsed.program);
+
+	// 2. Static import declarations
+	for (const stmt of parsed.program.body) {
+		if (stmt.type === "ImportDeclaration") {
+			replacements.push({
+				start: stmt.start,
+				end: stmt.end,
+				type: "static",
+				node: stmt,
+			});
+		}
+	}
+
+	replacements.sort((a, b) => b.start - a.start);
+
+	let out = code;
+	for (const rep of replacements) {
+		if (rep.type === "dynamic") {
+			const imp = rep.node;
+			const argText = code.slice(imp.source.start, imp.source.end);
+			const tail = code.slice(imp.end);
+			const chain = /^\s*[.(]/.test(tail);
+			const head = code.slice(0, imp.start);
+			const awaited = /\bawait\s*$/.test(head);
+
+			const base = `globalThis.__apollo_import__(${argText})`;
+			let replacementStr = base;
+			if (chain) {
+				replacementStr = awaited ? `(await ${base})` : `(${base})`;
+			}
+			out = out.slice(0, imp.start) + replacementStr + out.slice(imp.end);
+		} else if (rep.type === "static") {
+			const decl = rep.node;
+			const specifier = JSON.stringify(decl.source.value);
+			const specifiers = decl.specifiers || [];
+
+			let replacementStr = "";
+			if (specifiers.length === 0) {
+				replacementStr = `await globalThis.__apollo_import__(${specifier});`;
+			} else {
+				const defaultSpec = specifiers.find((s: any) => s.type === "ImportDefaultSpecifier");
+				const nsSpec = specifiers.find((s: any) => s.type === "ImportNamespaceSpecifier");
+				const namedSpecs = specifiers.filter((s: any) => s.type === "ImportSpecifier");
+
+				if (nsSpec) {
+					const nsName = nsSpec.local.name;
+					recordUserGlobal(nsName);
+					replacementStr = `const ${nsName} = (globalThis.${nsName} = await globalThis.__apollo_import__(${specifier}));`;
+				} else if (defaultSpec && namedSpecs.length === 0) {
+					const defName = defaultSpec.local.name;
+					recordUserGlobal(defName);
+					replacementStr = `const __mod_${defName} = await globalThis.__apollo_import__(${specifier}); const ${defName} = (globalThis.${defName} = __mod_${defName}.default ?? __mod_${defName});`;
+				} else if (!defaultSpec && namedSpecs.length > 0) {
+					const inner = namedSpecs
+						.map((s: any) => {
+							recordUserGlobal(s.local.name);
+							return s.imported.name === s.local.name ? s.local.name : `${s.imported.name}: ${s.local.name}`;
+						})
+						.join(", ");
+					const assignGlobals = namedSpecs.map((s: any) => `globalThis.${s.local.name} = ${s.local.name};`).join(" ");
+					replacementStr = `const { ${inner} } = await globalThis.__apollo_import__(${specifier}); ${assignGlobals}`;
+				} else if (defaultSpec && namedSpecs.length > 0) {
+					const defName = defaultSpec.local.name;
+					recordUserGlobal(defName);
+					const inner = namedSpecs
+						.map((s: any) => {
+							recordUserGlobal(s.local.name);
+							return s.imported.name === s.local.name ? s.local.name : `${s.imported.name}: ${s.local.name}`;
+						})
+						.join(", ");
+					const assignGlobals = [
+						`globalThis.${defName} = ${defName};`,
+						...namedSpecs.map((s: any) => `globalThis.${s.local.name} = ${s.local.name};`),
+					].join(" ");
+					replacementStr = `const __mod_${defName} = await globalThis.__apollo_import__(${specifier}); const ${defName} = __mod_${defName}.default ?? __mod_${defName}; const { ${inner} } = __mod_${defName}; ${assignGlobals}`;
+				}
+			}
+			out = out.slice(0, decl.start) + replacementStr + out.slice(decl.end);
+		}
+	}
+
 	return out;
 }
 function _isExpressionExecutable(expr: string): boolean {
@@ -1525,6 +1343,10 @@ export async function startReplLoop(preloadGlobals?: Record<string, unknown>): P
 
 	_setupSkillModuleResolver();
 	_setupStdoutStderrInterception();
+
+	if (!process.env.APOLLO_SESSION_KERNEL_PID) {
+		process.env.APOLLO_SESSION_KERNEL_PID = String(process.pid);
+	}
 
 	const shutdown = () => {
 		try {

@@ -9,7 +9,7 @@ import { z } from "zod";
  * Built on top of high-performance undici / native fetch.
  */
 export const http = {
-	async get(url: string, options?: RequestInit): Promise<any> {
+	async get(url: string, options?: any): Promise<any> {
 		const res = await undici.fetch(url, { method: "GET", ...options });
 		const text = await res.text();
 		try {
@@ -18,7 +18,7 @@ export const http = {
 			return text;
 		}
 	},
-	async post(url: string, body?: any, options?: RequestInit): Promise<any> {
+	async post(url: string, body?: any, options?: any): Promise<any> {
 		const headers: Record<string, string> = { ...(options?.headers as any) };
 		let payload: any = body;
 		if (typeof body === "object" && !(body instanceof Uint8Array) && !(body instanceof ArrayBuffer)) {
