@@ -1,0 +1,2 @@
+- Added kernel restore verification probe with prototype loss detection and unverified guidance.
+- Added source type and hypothesis labeling for harness refinement entries.

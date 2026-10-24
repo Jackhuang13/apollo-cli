@@ -946,6 +946,7 @@ export function handleSnapshot(msg: Record<string, unknown>): void {
 
 	try {
 		const saved: string[] = [];
+		const types: Record<string, string> = {};
 		const skipped: Array<{ name: string; type: string; reason: string; size_bytes?: number }> = [];
 		const pruned: Array<{ name: string; type: string; size_bytes: number }> = [];
 		const frames: Array<{ name: string; type: string; frame: Buffer; payloadBytes: number }> = [];
@@ -1027,6 +1028,7 @@ export function handleSnapshot(msg: Record<string, unknown>): void {
 			chunks.push(item.frame);
 			totalBytes += item.frame.byteLength;
 			saved.push(item.name);
+			types[item.name] = item.type;
 		}
 
 		const finalBuffer = Buffer.concat(chunks);
@@ -1040,6 +1042,7 @@ export function handleSnapshot(msg: Record<string, unknown>): void {
 			format: "apollo-cli-kernel-snapshot-v1",
 			created_at: new Date().toISOString(),
 			saved,
+			types,
 			skipped,
 			pruned,
 			total_bytes: finalBuffer.byteLength,
@@ -1078,6 +1081,124 @@ export function handleSnapshot(msg: Record<string, unknown>): void {
 	}
 }
 
+export const MAX_RESTORE_VERIFY_DEPTH = 3;
+
+export interface VerifyRestoredResult {
+	verified: boolean;
+	reason?: string;
+}
+
+const BUILTIN_PLAIN_TYPES = new Set([
+	"Object",
+	"Array",
+	"Map",
+	"Set",
+	"Date",
+	"RegExp",
+	"ArrayBuffer",
+	"null",
+	"undefined",
+	"number",
+	"string",
+	"boolean",
+	"bigint",
+	"symbol",
+]);
+
+export function _verifyRestoredGlobal(
+	_name: string,
+	value: unknown,
+	originalType?: string,
+	depth = 0,
+	visited = new WeakSet<object>(),
+): VerifyRestoredResult {
+	if (value === null || value === undefined) {
+		return { verified: true };
+	}
+
+	const t = typeof value;
+	if (t === "number" || t === "string" || t === "boolean" || t === "bigint" || t === "symbol") {
+		return { verified: true };
+	}
+
+	if (t === "function") {
+		return { verified: false, reason: "function_unpicklable" };
+	}
+
+	if (t !== "object") {
+		return { verified: true };
+	}
+
+	const obj = value as object;
+	if (visited.has(obj)) {
+		return { verified: true };
+	}
+	visited.add(obj);
+
+	if (depth >= MAX_RESTORE_VERIFY_DEPTH) {
+		return { verified: false, reason: "complex_structure" };
+	}
+
+	// Class instance prototype loss detection:
+	// If manifest recorded an original class type that is not a builtin plain container,
+	// but the restored object has Object.prototype as its prototype, its class methods were lost.
+	const proto = Object.getPrototypeOf(obj);
+	if (proto === Object.prototype) {
+		if (originalType && !BUILTIN_PLAIN_TYPES.has(originalType) && !ArrayBuffer.isView(obj)) {
+			return { verified: false, reason: "prototype_lost" };
+		}
+		const constructorName = (obj as { constructor?: { name?: unknown } }).constructor?.name;
+		if (constructorName && typeof constructorName === "string" && constructorName !== "Object") {
+			return { verified: false, reason: "prototype_lost" };
+		}
+	}
+
+	if (Array.isArray(obj)) {
+		for (let i = 0; i < Math.min(obj.length, 50); i++) {
+			const res = _verifyRestoredGlobal(_name, obj[i], undefined, depth + 1, visited);
+			if (!res.verified) return res;
+		}
+		return { verified: true };
+	}
+
+	if (obj instanceof Set) {
+		let count = 0;
+		for (const item of obj) {
+			if (++count > 50) break;
+			const res = _verifyRestoredGlobal(_name, item, undefined, depth + 1, visited);
+			if (!res.verified) return res;
+		}
+		return { verified: true };
+	}
+
+	if (obj instanceof Map) {
+		let count = 0;
+		for (const [k, v] of obj) {
+			if (++count > 50) break;
+			const keyRes = _verifyRestoredGlobal(_name, k, undefined, depth + 1, visited);
+			if (!keyRes.verified) return keyRes;
+			const valRes = _verifyRestoredGlobal(_name, v, undefined, depth + 1, visited);
+			if (!valRes.verified) return valRes;
+		}
+		return { verified: true };
+	}
+
+	if (obj instanceof Date || obj instanceof RegExp || ArrayBuffer.isView(obj) || obj instanceof ArrayBuffer) {
+		return { verified: true };
+	}
+
+	// Plain object properties
+	const keys = Object.keys(obj);
+	for (let i = 0; i < Math.min(keys.length, 50); i++) {
+		const k = keys[i];
+		const propVal = (obj as Record<string, unknown>)[k];
+		const res = _verifyRestoredGlobal(_name, propVal, undefined, depth + 1, visited);
+		if (!res.verified) return res;
+	}
+
+	return { verified: true };
+}
+
 export function handleRestore(msg: Record<string, unknown>): void {
 	const id = String(msg.id ?? "");
 	const sourcePath = typeof msg.path === "string" ? msg.path : "";
@@ -1089,12 +1210,36 @@ export function handleRestore(msg: Record<string, unknown>): void {
 			status: "ok",
 			reason: "snapshot not found",
 			restored: [],
+			verified: [],
+			unverified: [],
 			failed: [],
 		});
 		return;
 	}
 
 	try {
+		let snapshotTypes: Record<string, string> = {};
+		const explicitManifestPath = typeof msg.manifest_path === "string" ? msg.manifest_path : "";
+		const candidateManifestPaths = [
+			explicitManifestPath,
+			sourcePath.replace(/\.(snap|dill)$/, ".json"),
+			path.join(path.dirname(sourcePath), "kernel-state.json"),
+		].filter(Boolean);
+
+		for (const mPath of candidateManifestPaths) {
+			if (fs.existsSync(mPath)) {
+				try {
+					const manifestJson = JSON.parse(fs.readFileSync(mPath, "utf8"));
+					if (manifestJson && typeof manifestJson.types === "object" && manifestJson.types !== null) {
+						snapshotTypes = manifestJson.types as Record<string, string>;
+						break;
+					}
+				} catch {
+					// Fall back gracefully if manifest is not valid JSON
+				}
+			}
+		}
+
 		const buf = fs.readFileSync(sourcePath);
 		let offset = 0;
 
@@ -1107,6 +1252,8 @@ export function handleRestore(msg: Record<string, unknown>): void {
 		}
 
 		const restored: string[] = [];
+		const verified: string[] = [];
+		const unverified: Array<{ name: string; reason: string }> = [];
 		const failed: Array<{ name: string; reason: string }> = [];
 		const g = globalThis as Record<string, unknown>;
 
@@ -1142,6 +1289,14 @@ export function handleRestore(msg: Record<string, unknown>): void {
 				g[name] = value;
 				recordUserGlobal(name);
 				restored.push(name);
+
+				const originalType = snapshotTypes[name];
+				const probe = _verifyRestoredGlobal(name, value, originalType);
+				if (probe.verified) {
+					verified.push(name);
+				} else {
+					unverified.push({ name, reason: probe.reason ?? "verification_failed" });
+				}
 			} catch (err) {
 				failed.push({
 					name,
@@ -1156,6 +1311,8 @@ export function handleRestore(msg: Record<string, unknown>): void {
 			status: "ok",
 			path: sourcePath,
 			restored,
+			verified,
+			unverified,
 			failed,
 		});
 	} catch (err) {

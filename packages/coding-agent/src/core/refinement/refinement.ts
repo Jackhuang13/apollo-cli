@@ -35,6 +35,7 @@ const HARNESS_DIGEST_FINGERPRINT_VERSION = 1;
 export type RefinementKind = "prompt" | "memory" | "skill" | "subagent";
 export type RefinementAction = "create" | "update" | "delete";
 export type HarnessScope = "local" | "global";
+export type HarnessSourceType = "observed" | "inferred";
 
 export interface HarnessEntry {
 	id: string;
@@ -43,6 +44,7 @@ export interface HarnessEntry {
 	content: string;
 	path: string;
 	scope?: HarnessScope;
+	source_type?: HarnessSourceType;
 	reference: Record<string, unknown>;
 	arguments: Record<string, unknown>;
 	metadata: Record<string, unknown>;
@@ -74,6 +76,7 @@ export interface RefinementEdit {
 	title?: string;
 	content?: string;
 	path?: string;
+	source_type?: HarnessSourceType;
 	reference?: Record<string, unknown>;
 	arguments?: Record<string, unknown>;
 	metadata?: Record<string, unknown>;
@@ -123,6 +126,7 @@ export interface AutoRefineReviewContext {
 export interface AutoRefineReview {
 	shouldRefine: boolean;
 	rationale: string;
+	verification?: string;
 	instructions?: string;
 }
 
@@ -151,6 +155,10 @@ Scope and persistence policy:
 - Project/workspace-specific lessons may be persisted globally only when the title, path, or content explicitly names the project/workspace and the lesson is likely to be reused in future sessions for that project. Prefer local edits when the lesson only belongs in the current conversation.
 - Use memory for declarative facts and preferences, skill for repeatable procedures exposed as Python calls, prompt for narrow behavioral policy addendums, and subagent for reusable delegation roles.
 - Create or update the smallest relevant component: repeated delegation roles should become subagent specs, repeated procedures should become skills, durable facts/preferences should become memories, and narrow behavioral policies should become prompt addendums.
+- Fact verification policy:
+  * Entries based on observed and verified tool outputs or test results MUST set "source_type": "observed".
+  * Entries based on unverified models deductions or hypotheses MUST set "source_type": "inferred".
+  * When candidate existing memories conflict with newly observed facts, you MUST emit an "update" (modifying the entry with the new fact and superseding the old) or a "delete" action. Do NOT accumulate contradicting entries.
 - When an edit is persisted, include metadata such as \`{"scope":"local"}\` or \`{"scope":"global"}\` when that helps future review understand the intended blast radius.
 
 Use the trajectory, current continual harness state, and prior refinement history. Prefer
@@ -170,6 +178,7 @@ JSON only with this exact shape:
       "title": "required for create/update except delete",
       "content": "required for create/update except delete",
       "path": "optional grouping path",
+      "source_type": "observed|inferred",
       "reference": {"type": "python", "import": "package.module", "callable": "function_name", "call_pattern": "await function_name(...)"},
       "arguments": {"name": {"type": "string", "required": true, "description": "accepted input"}},
       "metadata": {},
@@ -183,10 +192,15 @@ const AUTO_REFINE_REVIEW_SYSTEM_PROMPT = `You are Prime Agent's automatic /refin
 Decide whether this checkpoint should run /refine. Auto /refine writes local continual harness state by default, so approve when the trajectory contains evidence useful to this session's future turns.
 Reject one-off noise, unsupported hypotheses, and transient tool outputs. Ask for global refinement only for durable cross-session lessons or explicitly project-qualified lessons likely to be reused in future sessions.
 
+Verification requirements:
+- When "shouldRefine" is true, you MUST include a "verification" field explicitly citing the concrete tool output ID, bash command result, or file change from the trajectory that proves the lesson.
+- Deductions or hypotheses without concrete execution output in the trajectory must NOT be approved for refinement.
+
 Return JSON only:
 {
   "shouldRefine": true|false,
   "rationale": "short reason",
+  "verification": "concrete citation of tool output ID, exit code, or diff proving this lesson",
   "instructions": "optional concise instructions for /refine if shouldRefine is true"
 }`;
 
@@ -360,10 +374,12 @@ export function loadHarnessState(
 				// writes the `path` spelling only.
 				const { topic: _topic, ...rest } = entry;
 				const path = storedHarnessPath(entry);
+				const sourceType: HarnessSourceType = entry.source_type === "inferred" ? "inferred" : "observed";
 				state.entries[kind][id] = {
 					...(rest as unknown as HarnessEntry),
 					...(path === undefined ? {} : { path }),
 					scope: normalizeHarnessScope(entry.scope, scope),
+					source_type: sourceType,
 					reference: objectRecord(entry.reference) ?? {},
 					arguments: objectRecord(entry.arguments) ?? {},
 					metadata: objectRecord(entry.metadata) ?? {},
@@ -473,6 +489,9 @@ export function mergeRefinementHistory(
 export function harnessEntryMalformation(entry: HarnessEntry): string | undefined {
 	if (typeof entry.content !== "string") return "content not a string";
 	if (typeof entry.title !== "string") return "title not a string";
+	if (entry.source_type !== undefined && entry.source_type !== "observed" && entry.source_type !== "inferred") {
+		return "invalid source_type";
+	}
 	return undefined;
 }
 
@@ -647,7 +666,11 @@ function compareRankedHarnessEntries(
 	terms: HarnessQueryTerms,
 	idf?: Map<string, number>,
 ): number {
-	const scoreDifference = scoreHarnessEntryForQuery(b, terms, idf) - scoreHarnessEntryForQuery(a, terms, idf);
+	// Observed entries have full weight; inferred hypotheses decay in ranking weight (discounted by 50%)
+	const aMultiplier = a.source_type === "inferred" ? 0.5 : 1.0;
+	const bMultiplier = b.source_type === "inferred" ? 0.5 : 1.0;
+	const scoreDifference =
+		scoreHarnessEntryForQuery(b, terms, idf) * bMultiplier - scoreHarnessEntryForQuery(a, terms, idf) * aMultiplier;
 	if (scoreDifference !== 0) return scoreDifference;
 	// Equal scores tie on stable identifier order (path, title, id), so
 	// touching unrelated entries never reshuffles equal-score siblings and the
@@ -735,8 +758,9 @@ export function formatHarnessStateForPrompt(
 				entry.kind === "skill" && Object.keys(entry.reference).length > 0
 					? ` ref=${compactText(JSON.stringify(entry.reference), maxContentLength)}`
 					: "";
+			const sourceTag = entry.source_type === "inferred" ? " [HYPOTHESIS - UNVERIFIED]" : "";
 			lines.push(
-				`- [${entry.scope ?? "global"}:${entry.id}] ${entry.title} (${entry.path}, v${entry.version})${referenceText}${argumentsText}: ${compactText(
+				`- [${entry.scope ?? "global"}:${entry.id}]${sourceTag} ${entry.title} (${entry.path}, v${entry.version})${referenceText}${argumentsText}: ${compactText(
 					entry.content,
 					maxContentLength,
 				)}`,
@@ -863,8 +887,9 @@ function overviewForPrompt(state: HarnessState): string {
 				entry.kind === "skill" && Object.keys(entry.reference).length > 0
 					? ` ref=${JSON.stringify(entry.reference).slice(0, 240)}`
 					: "";
+			const sourceTag = entry.source_type === "inferred" ? " [HYPOTHESIS - UNVERIFIED]" : "";
 			lines.push(
-				`- [${entry.scope ?? "global"}:${entry.id}] ${entry.title} (${entry.path}, v${entry.version})${referenceText}${argumentsText}: ${content}`,
+				`- [${entry.scope ?? "global"}:${entry.id}]${sourceTag} ${entry.title} (${entry.path}, v${entry.version})${referenceText}${argumentsText}: ${content}`,
 			);
 		}
 		if (entries.length > 40) {
@@ -1118,6 +1143,7 @@ export function applyRefinementProposal(
 
 		const createdAt = before?.created_at ?? now();
 		const version = before ? before.version + 1 : 1;
+		const sourceType: HarnessSourceType = edit.source_type ?? before?.source_type ?? "observed";
 		const after: HarnessEntry = {
 			id,
 			kind: edit.kind,
@@ -1125,6 +1151,7 @@ export function applyRefinementProposal(
 			content: edit.content ?? before?.content ?? "",
 			path: edit.path ?? before?.path ?? "general",
 			scope: before?.scope ?? options.scope ?? "local",
+			source_type: sourceType,
 			reference: edit.reference ?? before?.reference ?? {},
 			arguments: edit.arguments ?? before?.arguments ?? {},
 			metadata: edit.metadata ?? before?.metadata ?? {},
@@ -1321,9 +1348,12 @@ function parseAutoRefineReview(text: string): AutoRefineReview {
 		throw new Error("Auto-refine review JSON must be an object");
 	}
 	const record = value as Record<string, unknown>;
+	const shouldRefine = record.shouldRefine === true;
+	const verification = typeof record.verification === "string" ? record.verification.trim() : undefined;
 	return {
-		shouldRefine: record.shouldRefine === true,
+		shouldRefine,
 		rationale: typeof record.rationale === "string" ? record.rationale : "No rationale provided.",
+		verification,
 		instructions: typeof record.instructions === "string" ? record.instructions : undefined,
 	};
 }

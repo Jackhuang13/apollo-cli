@@ -17,6 +17,7 @@ import path from "node:path";
 
 export type HarnessKind = "prompt" | "memory" | "skill" | "subagent";
 export type HarnessScope = "local" | "global";
+export type HarnessSourceType = "observed" | "inferred";
 
 const DEFAULT_FILE_NAME = "harness_state.json";
 const DEFAULT_HARNESS_DIR_NAME = "harness";
@@ -191,6 +192,7 @@ export interface HarnessEntryInit {
 	content: string;
 	path?: string;
 	scope?: HarnessScope;
+	source_type?: HarnessSourceType;
 	reference?: Record<string, unknown>;
 	arguments?: Record<string, unknown>;
 	metadata?: Record<string, unknown>;
@@ -208,6 +210,7 @@ export class HarnessEntry {
 		content: true,
 		path: true,
 		scope: true,
+		source_type: true,
 		reference: true,
 		arguments: true,
 		metadata: true,
@@ -223,6 +226,7 @@ export class HarnessEntry {
 	content: string;
 	path: string;
 	scope: HarnessScope;
+	source_type: HarnessSourceType;
 	reference: Record<string, unknown>;
 	arguments: Record<string, unknown>;
 	metadata: Record<string, unknown>;
@@ -238,6 +242,7 @@ export class HarnessEntry {
 		this.content = init.content;
 		this.path = init.path ?? "general";
 		this.scope = init.scope ?? "local";
+		this.source_type = init.source_type ?? "observed";
 		this.reference = init.reference ? { ...init.reference } : {};
 		this.arguments = init.arguments ? { ...init.arguments } : {};
 		this.metadata = init.metadata ? { ...init.metadata } : {};
@@ -255,6 +260,7 @@ export class HarnessEntry {
 			content: this.content,
 			path: this.path,
 			scope: this.scope,
+			source_type: this.source_type,
 			reference: { ...this.reference },
 			arguments: { ...this.arguments },
 			metadata: { ...this.metadata },
@@ -561,6 +567,8 @@ export class HarnessState {
 					} else {
 						version = 1;
 					}
+					const sourceType: HarnessSourceType =
+						rawEntry.source_type === "inferred" ? "inferred" : "observed";
 					nextEntries[kind][String(entryId)] = new HarnessEntry({
 						id: String(entryId),
 						kind,
@@ -568,6 +576,7 @@ export class HarnessState {
 						content,
 						path: entryPath,
 						scope,
+						source_type: sourceType,
 						reference: isPlainRecord(rawEntry.reference) ? rawEntry.reference : {},
 						arguments: isPlainRecord(rawEntry.arguments) ? rawEntry.arguments : {},
 						metadata: isPlainRecord(rawEntry.metadata) ? rawEntry.metadata : {},

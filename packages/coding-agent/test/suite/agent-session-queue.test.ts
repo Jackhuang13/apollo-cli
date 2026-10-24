@@ -1610,7 +1610,13 @@ type KernelHostSession = {
 };
 
 type StateRestoreHost = {
-	_onIpythonStateRestored(result: { restored: string[]; failed: string[]; path: string }): void;
+	_onIpythonStateRestored(result: {
+		restored: string[];
+		verified?: string[];
+		unverified?: { name: string; reason: string }[];
+		failed: { name: string; reason: string }[];
+		path: string;
+	}): void;
 };
 
 const HEARTBEAT_MARKED_PROMPT = "[heartbeat: every 5m run#0]\n\ncheck progress";
@@ -2007,6 +2013,38 @@ describe("AgentSession queue regressions", () => {
 
 		expect(providerSawRestoreContext).toBe(true);
 		expect(getUserTexts(harness)).toEqual(["start", "stop the heartbeat"]);
+	});
+
+	it("formats verified and unverified prototype_lost notices in restore context", async () => {
+		const { harness, waitForToolStart, promptPromise, releaseToolExecution } = await createWaitingHarness();
+		harnesses.push(harness);
+		let restoreText = "";
+		harness.setResponses([
+			fauxAssistantMessage(fauxToolCall("wait", {}), { stopReason: "toolUse" }),
+			fauxAssistantMessage("original turn complete"),
+			(context) => {
+				const msg = context.messages.find((m) => getMessageText(m).includes("[python-state-restored]"));
+				if (msg) restoreText = getMessageText(msg);
+				return fauxAssistantMessage("queued turn complete");
+			},
+		]);
+		await waitForToolStart;
+		(harness.session as unknown as StateRestoreHost)._onIpythonStateRestored({
+			restored: ["data", "service"],
+			verified: ["data"],
+			unverified: [{ name: "service", reason: "prototype_lost" }],
+			failed: [],
+			path: "/tmp/kernel-state.snap",
+		});
+		await harness.session.prompt("next", { streamingBehavior: "followUp" });
+		releaseToolExecution();
+		await promptPromise;
+		await harness.session.waitForIdle();
+
+		expect(restoreText).toContain("These names have been verified and are ready to use: data.");
+		expect(restoreText).toContain(
+			"Variable 'service' was restored as a plain data structure. Class methods are missing. Please re-instantiate or re-import the class.",
+		);
 	});
 
 	it("#2068: consumes shell steering at the next tool boundary without waiting for idle", async () => {

@@ -1153,4 +1153,33 @@ describe("harness digest relevance ranking", () => {
 	])("tokenizes %j into %j", (query, expected) => {
 		expect(harnessQueryTerms(query)).toEqual(expected);
 	});
+
+	it("renders [HYPOTHESIS - UNVERIFIED] tag for inferred memory entries", () => {
+		const state = loadHarnessState(join(makeTempDir(), "h-inferred"), "local");
+		const entry = makeEntry("hypo1", "Hypothesis title", "Hypothesis content", "2026-10-24T00:00:00.000Z");
+		entry.source_type = "inferred";
+		state.entries.memory.hypo1 = entry;
+
+		const rendered = formatHarnessStateForPrompt(state, { maxEntriesPerKind: 5 });
+		expect(rendered).toContain("[HYPOTHESIS - UNVERIFIED]");
+		expect(rendered).toContain("[global:hypo1]");
+	});
+
+	it("discounts inferred entries compared to observed entries in ranking", () => {
+		const state = loadHarnessState(join(makeTempDir(), "h-rank"), "local");
+		const observed = makeEntry("obs", "Deployment bug", "Important deployment fix.", "2026-10-24T00:00:00.000Z");
+		observed.source_type = "observed";
+		const inferred = makeEntry("inf", "Deployment bug", "Important deployment fix.", "2026-10-24T00:00:00.000Z");
+		inferred.source_type = "inferred";
+
+		state.entries.memory.inf = inferred;
+		state.entries.memory.obs = observed;
+
+		const ranked = formatHarnessStateForPrompt(state, {
+			maxEntriesPerKind: 1,
+			queryTerms: new Map([["deployment", 1]]),
+		});
+		expect(ranked).toContain("[global:obs]");
+		expect(ranked).not.toContain("[global:inf]");
+	});
 });

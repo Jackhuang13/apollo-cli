@@ -32,6 +32,10 @@ export interface SnapshotResult {
 export interface RestoreResult {
 	/** Names successfully revived into the kernel namespace. */
 	restored: string[];
+	/** Names verified via post-restore probe and ready to use. */
+	verified?: string[];
+	/** Names revived but unverified (e.g. prototype lost, complex structure). */
+	unverified?: { name: string; reason: string }[];
 	/** Names present in the snapshot that failed to revive, with a short reason. */
 	failed: { name: string; reason: string }[];
 	path: string;

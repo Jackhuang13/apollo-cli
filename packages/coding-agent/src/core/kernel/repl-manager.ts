@@ -1741,7 +1741,7 @@ export class ReplKernelManager {
 		if (!protocolRepair) this.restoredManifestStat = manifestStatOf(cfg.manifestPath);
 		try {
 			const r = await this.enqueueRequest(
-				{ type: "restore", path: cfg.path },
+				{ type: "restore", path: cfg.path, manifest_path: cfg.manifestPath },
 				"",
 				{ internal: true, protocolRepair },
 				protocolRepair ? REPAIR_STEP_TIMEOUT_MS : RESTORE_EXECUTION_TIMEOUT_MS,
@@ -1757,6 +1757,8 @@ export class ReplKernelManager {
 			this.pendingRestore = false;
 			return {
 				restored: asStringArray(r.doneFields.restored),
+				verified: r.doneFields.verified ? asStringArray(r.doneFields.verified) : undefined,
+				unverified: r.doneFields.unverified ? asReasonArray(r.doneFields.unverified) : undefined,
 				failed: asReasonArray(r.doneFields.failed),
 				path: cfg.path,
 			};

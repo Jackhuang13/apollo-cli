@@ -8657,14 +8657,44 @@ export class AgentSession {
 
 	private _onIpythonStateRestored(result: RestoreResult): void {
 		const lines = ["[python-state-restored]", ""];
-		if (result.restored.length > 0) {
-			lines.push(
-				`Your Python kernel state was revived from your previous session. These names are available again: ${result.restored.join(", ")}.`,
-			);
+		if (result.verified !== undefined) {
+			if (result.verified.length > 0) {
+				lines.push(
+					`Your kernel state was revived from your previous session. These names have been verified and are ready to use: ${result.verified.join(", ")}.`,
+				);
+			} else if (result.restored.length === 0) {
+				lines.push(
+					"Your previous kernel state could not be revived; the kernel is starting fresh, so re-create any variables, imports, or loaded data you need.",
+				);
+			}
 		} else {
-			lines.push(
-				"Your previous Python kernel state could not be revived; the kernel is starting fresh, so re-create any variables, imports, or loaded data you need.",
-			);
+			// Backward compatibility fallback for older runtimes that do not emit verified fields
+			if (result.restored.length > 0) {
+				lines.push(
+					`Your kernel state was revived from your previous session. These names are available again: ${result.restored.join(", ")}.`,
+				);
+			} else {
+				lines.push(
+					"Your previous kernel state could not be revived; the kernel is starting fresh, so re-create any variables, imports, or loaded data you need.",
+				);
+			}
+		}
+		if (result.unverified && result.unverified.length > 0) {
+			for (const u of result.unverified) {
+				if (u.reason === "prototype_lost") {
+					lines.push(
+						`Variable '${u.name}' was restored as a plain data structure. Class methods are missing. Please re-instantiate or re-import the class.`,
+					);
+				} else if (u.reason === "complex_structure") {
+					lines.push(
+						`Variable '${u.name}' contains complex nested structures. Please run a quick check before using.`,
+					);
+				} else {
+					lines.push(
+						`Variable '${u.name}' was restored but could not be fully verified (${u.reason}). Please verify before using.`,
+					);
+				}
+			}
 		}
 		if (result.failed.length > 0) {
 			lines.push(
