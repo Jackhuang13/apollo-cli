@@ -257,6 +257,7 @@ const _RESERVED_NAMES = new Set<string>([
 	"process",
 	"Buffer",
 	"console",
+	"require",
 	"setTimeout",
 	"clearTimeout",
 	"setInterval",
@@ -480,6 +481,75 @@ function _preprocessBangLines(code: string): string {
 	return out.join("\n");
 }
 
+interface OxcSyntaxErrorInfo {
+	message: string;
+	start?: number;
+	end?: number;
+	severity?: string;
+}
+
+class ReplSyntaxError extends SyntaxError {
+	readonly oxcError?: OxcSyntaxErrorInfo;
+	readonly sourceCode?: string;
+
+	constructor(message: string, oxcError?: OxcSyntaxErrorInfo, sourceCode?: string) {
+		super(message);
+		this.name = "SyntaxError";
+		this.oxcError = oxcError;
+		this.sourceCode = sourceCode;
+	}
+}
+
+function _checkIncrementalSyntaxErrors(code: string): { message: string; offset: number } | null {
+	const lines = code.split("\n");
+	let buffer = "";
+	let bufStart = 0;
+	let currentOffset = 0;
+
+	for (let idx = 0; idx < lines.length; idx++) {
+		const line = lines[idx]!;
+		const candidate = buffer ? `${buffer}\n${line}` : line;
+		let valid = false;
+		try {
+			const p = parseSync(candidate, { sourceFilename: "chunk.ts" });
+			if (p.errors.length === 0) valid = true;
+		} catch {
+			valid = false;
+		}
+
+		if (valid && candidate.trim().length > 0) {
+			const nextLine = lines[idx + 1];
+			const isContinuation =
+				nextLine !== undefined &&
+				(/^(?:\.|\`|\?|,|[+\-*%&|^=<>]|\bin\b|\binstanceof\b)/.test(nextLine.trim()) ||
+					/^\/\s/.test(nextLine.trim()));
+			if (!isContinuation) {
+				buffer = "";
+				bufStart = currentOffset + line.length + 1;
+				currentOffset += line.length + 1;
+				continue;
+			}
+		}
+		buffer = candidate;
+		currentOffset += line.length + 1;
+	}
+
+	if (buffer.trim().length > 0) {
+		let p: any;
+		try {
+			p = parseSync(buffer, { sourceFilename: "leftover.ts" });
+		} catch {
+			p = null;
+		}
+		const err = p?.errors?.[0];
+		const message = err?.message || "Syntax error during cell parsing";
+		const offset = bufStart + (typeof err?.start === "number" ? err.start : 0);
+		return { message, offset };
+	}
+
+	return null;
+}
+
 function _transformTopLevelImports(code: string): string {
 	let parsed: any;
 	try {
@@ -489,6 +559,10 @@ function _transformTopLevelImports(code: string): string {
 	}
 
 	if (!parsed || parsed.errors?.length > 0 || !parsed.program) {
+		const syntaxErr = _checkIncrementalSyntaxErrors(code);
+		if (syntaxErr) {
+			throw new ReplSyntaxError(syntaxErr.message, { start: syntaxErr.offset, message: syntaxErr.message }, code);
+		}
 		return code;
 	}
 
@@ -745,6 +819,51 @@ function _knownFailureHint(err: unknown): string | undefined {
 function _formatTraceback(err: unknown, cellNum: number): { ename: string; evalue: string; traceback: string[] } {
 	const cellTag = `<cell-${cellNum}>`;
 	const hint = _knownFailureHint(err);
+
+	if (err instanceof ReplSyntaxError) {
+		const ename = "SyntaxError";
+		const evalue = err.message;
+		const code = err.sourceCode ?? "";
+		const rawOffset = typeof err.oxcError?.start === "number" ? err.oxcError.start : 0;
+		const effectiveOffset = Math.min(rawOffset, code.length);
+
+		let line = 1;
+		let col = 1;
+		for (let i = 0; i < effectiveOffset; i++) {
+			if (code[i] === "\n") {
+				line++;
+				col = 1;
+			} else {
+				col++;
+			}
+		}
+
+		const allLines = code.split("\n");
+		let targetLineIdx = line - 1;
+		let caretCol = col;
+		if (
+			targetLineIdx >= allLines.length ||
+			(targetLineIdx > 0 && allLines[targetLineIdx] === "" && targetLineIdx === allLines.length - 1)
+		) {
+			targetLineIdx = Math.max(0, targetLineIdx - 1);
+			line = targetLineIdx + 1;
+			caretCol = allLines[targetLineIdx].length + 1;
+			col = caretCol;
+		}
+
+		const sourceLine = allLines[targetLineIdx] ?? "";
+		const caret = `${" ".repeat(Math.max(0, caretCol - 1))}^`;
+
+		const traceback = [
+			`SyntaxError: ${evalue}`,
+			`    at ${cellTag}:${line}:${col}`,
+			sourceLine,
+			caret,
+		];
+		if (hint) traceback.push(hint);
+		return { ename, evalue, traceback };
+	}
+
 	if (err instanceof Error) {
 		const ename = err.name || "Error";
 		const evalue = err.message || String(err);
@@ -1402,6 +1521,7 @@ function _setupStdoutStderrInterception(): void {
 function _setupSkillModuleResolver(): void {
 	const req = moduleBuiltin.createRequire(path.join(process.cwd(), "__repl__.js"));
 	(globalThis as Record<string, unknown>).__apollo_require__ = req;
+	(globalThis as Record<string, unknown>).require = req;
 
 	const skillImportMap = new Map<string, string>();
 	const skillsDirEnv = process.env.APOLLO_SKILLS_DIR || process.env.PRIME_AGENT_SKILLS_DIR;

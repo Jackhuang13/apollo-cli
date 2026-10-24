@@ -383,3 +383,31 @@ test("import rewriter: import syntax inside comments does not execute or break t
 		repl.close();
 	}
 });
+
+test("repl supports global require and reserves require name", async () => {
+	const repl = new ReplTestDriver();
+	try {
+		await repl.nextEvent();
+		const res = await runCell(repl, "req", "const fs = require('node:fs'); typeof fs.readFileSync");
+		assert.equal(res.status, "ok", res.errorText || res.resultText);
+		assert.equal(res.resultText, "'function'");
+	} finally {
+		repl.close();
+	}
+});
+
+test("repl intercepts syntax errors early when import is present and formats as V8 traceback", async () => {
+	const repl = new ReplTestDriver();
+	try {
+		await repl.nextEvent();
+		const res = await runCell(repl, "syn", "import { foo } from 'bar';\nconst a = (\n");
+		assert.equal(res.status, "error");
+		assert.ok(!res.errorText.includes("Cannot use import statement outside a module"));
+		assert.ok(res.errorText.includes("SyntaxError"));
+		assert.ok(res.errorText.includes("at <cell-"));
+		assert.ok(res.errorText.includes("const a = ("));
+		assert.ok(res.errorText.includes("^"));
+	} finally {
+		repl.close();
+	}
+});
