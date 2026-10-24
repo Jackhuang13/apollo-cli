@@ -269,6 +269,7 @@ import {
 	createAsyncBashConsumedHostHandler,
 	createDefaultRlmSubagentSessionName,
 	createRlmCollectHostHandler,
+	createRlmCompleteHostHandler,
 	createRlmCreateSessionHostHandler,
 	createRlmDeleteSubagentHostHandler,
 	createRlmFindModelsHostHandler,
@@ -289,6 +290,7 @@ import {
 	type RlmListSubagentsResult,
 	type RlmProgressNoteResult,
 	type RlmSpawnHandle,
+	type RlmStructuredResult,
 	type RlmSubagentRegistryEntry,
 	type RlmSubagentRuntime,
 	type SubagentRuntimeHost,
@@ -558,6 +560,7 @@ export interface AgentSessionConfig {
 	rlmParentAgent?: string;
 	semanticParentSessionId?: string;
 	semanticSpawnedByRequestId?: string;
+	expectedSchema?: Record<string, unknown>;
 	subagentRuntimeHost?: SubagentRuntimeHost;
 	autonomous?: AgentAutonomousConfig;
 	prewarmIpythonKernel?: boolean;
@@ -1067,6 +1070,10 @@ interface RlmChildRun {
 	error?: string;
 	abort: () => void;
 	publication: AgentMessageDeferred;
+	/** Strongly typed result submitted by rlm.complete or synthesized. */
+	structuredResult?: RlmStructuredResult;
+	/** Expected JSON schema specified at spawn. */
+	expectedSchema?: Record<string, unknown>;
 	/** Resolves after terminal result publication and detached-run cleanup finish. */
 	settlement: AgentMessageDeferred;
 	/** Child session, once its runtime exists. Used to cancel nested child runs. */
@@ -1703,6 +1710,7 @@ export class AgentSession {
 	private readonly _configuredRlmMaxDepth: number | undefined;
 	private _rlmMaxDepth: number;
 	private _rlmMaxDepthSource: RlmMaxDepthSource;
+	private _expectedSchema?: Record<string, unknown>;
 	private _rlmSessionDir?: string;
 	private readonly _semanticEdges: SemanticEdgeRecorder;
 	private _rlmParentNodeId?: string;
@@ -1715,6 +1723,8 @@ export class AgentSession {
 	// Child usage not yet represented by an indexed attribution, including a delayed parent entry.
 	private _rlmUnindexedChildUsage = new WeakMap<AssistantMessage, Usage>();
 	private _activeRlmChildRuns = new Map<string, RlmChildRun>();
+	/** Result explicitly reported by this session as a child via rlm.complete. */
+	private _childCompletedResult?: RlmStructuredResult;
 	/** Wall-clock ms of the last accepted progress note; throttles rlm.progress.note. */
 	private _lastRlmProgressNoteAt: number | undefined;
 	private _unsettledRlmChildRuns = new Set<RlmChildRun>();
@@ -1821,6 +1831,7 @@ export class AgentSession {
 		this._prewarmIpythonKernel = (config.prewarmIpythonKernel ?? false) && this._rlmDepth === 0;
 		this._autoRefineReviewer = config.autoRefineReviewer;
 		this._serializedRefine = config.serializedRefine ?? false;
+		this._expectedSchema = config.expectedSchema;
 		this._rlmSessionDir = config.rlmSessionDir;
 		this._rlmParentNodeId = config.rlmParentNodeId;
 		this._rlmParentAgent = config.rlmParentAgent;
@@ -11018,6 +11029,21 @@ export class AgentSession {
 			"rlm.collect": createRlmCollectHostHandler((targets, timeoutMs) =>
 				this.collectRlmChildren(targets, timeoutMs),
 			),
+			"rlm.complete": createRlmCompleteHostHandler((resultPayload) => {
+				const exitCode = resultPayload.exit_code ?? 0;
+				this._childCompletedResult = {
+					exit_code: exitCode,
+					status: exitCode === 0 ? "succeeded" : "failed",
+					summary: resultPayload.summary,
+					data: resultPayload.data,
+					artifacts: resultPayload.artifacts,
+					schema_mismatch: (resultPayload as Record<string, unknown>).schema_mismatch as boolean | undefined,
+					schema_validation_errors: (resultPayload as Record<string, unknown>).schema_validation_errors as
+						| string[]
+						| undefined,
+				};
+				return { accepted: true };
+			}, this._expectedSchema),
 			"rlm.progress.note": createRlmProgressNoteHostHandler((message) => this.noteRlmProgress(message)),
 			"rlm.delete_subagent": createRlmDeleteSubagentHostHandler((target) => this.deleteRlmSubagent(target)),
 			"model.info": async () => ({
@@ -11271,6 +11297,7 @@ export class AgentSession {
 		model: Model<any>;
 		thinkingLevel?: ThinkingLevel;
 		spawnedByRequestId?: string;
+		expectedSchema?: Record<string, unknown>;
 	}): CreateRlmSubagentRuntimeOptions {
 		const freedSessionIds = this._freedRlmChildSessionIds();
 		return {
@@ -11290,6 +11317,7 @@ export class AgentSession {
 			customTools: [...this._customTools],
 			includeGoals: this._includeGoals,
 			includeCompactSkill: this._includeCompactSkill,
+			expectedSchema: options.expectedSchema,
 			rlmDepth: this._rlmDepth + 1,
 			rlmMaxDepth: this._rlmMaxDepth,
 			rlmParentNodeId: options.id,
@@ -11365,6 +11393,7 @@ export class AgentSession {
 			rlmParentAgent: options.parentSession.sessionName ?? options.parentSession.sessionId,
 			semanticParentSessionId: options.parentSession.sessionId,
 			semanticSpawnedByRequestId: options.spawnedByRequestId,
+			expectedSchema: options.expectedSchema,
 			sessionStartEvent: { type: "session_start", reason: "startup" },
 		});
 		if (child.sessionName !== options.sessionName) {
@@ -11764,6 +11793,16 @@ export class AgentSession {
 
 	private _rlmCollectEntryForRun(run: RlmChildRun): RlmCollectResultEntry {
 		const snapshot = this._rlmChildSnapshotForRun(run);
+		let structuredResult = run.structuredResult ?? run.session?._childCompletedResult;
+		if (!structuredResult && run.settled) {
+			const isSuccess = snapshot.status === "done";
+			structuredResult = {
+				exit_code: isSuccess ? 0 : 1,
+				status: isSuccess ? "succeeded" : snapshot.status === "cancelled" ? "cancelled" : "failed",
+				summary: snapshot.answerPreview,
+				error: snapshot.error,
+			};
+		}
 		return {
 			rlm_child_id: snapshot.id,
 			session_name: snapshot.sessionName,
@@ -11775,6 +11814,7 @@ export class AgentSession {
 			duration_ms: snapshot.durationMs,
 			tool_use_count: snapshot.toolUseCount,
 			replied_since_task: snapshot.repliedSinceTask,
+			result: structuredResult,
 		};
 	}
 
@@ -11791,6 +11831,11 @@ export class AgentSession {
 			status: "cancelled",
 			settled: true,
 			error: entry.error ?? "Deleted by parent orchestrator",
+			result: {
+				exit_code: 1,
+				status: "cancelled",
+				error: entry.error ?? "Deleted by parent orchestrator",
+			},
 		};
 	}
 
@@ -12638,11 +12683,21 @@ export class AgentSession {
 		// executing now. A spawn arriving outside an active run (a detached kernel task
 		// firing while the parent is idle) has no such turn; an absent edge beats a wrong one.
 		const spawnedByRequestId = this.isStreaming ? this._semanticEdges.lastTurnRequestId : undefined;
-		const { name: rawName, model: rawModel, thinking: rawThinking, ...unsupported } = kwargs;
+		const {
+			name: rawName,
+			model: rawModel,
+			thinking: rawThinking,
+			expected_schema: rawExpectedSchema,
+			...unsupported
+		} = kwargs;
 		const unsupportedKwargs = Object.keys(unsupported);
 		if (unsupportedKwargs.length > 0) {
 			throw new Error(`Unsupported rlm.spawn kwargs: ${unsupportedKwargs.sort().join(", ")}`);
 		}
+		const requestedExpectedSchema =
+			typeof rawExpectedSchema === "object" && rawExpectedSchema !== null && !Array.isArray(rawExpectedSchema)
+				? (rawExpectedSchema as Record<string, unknown>)
+				: undefined;
 		const requestedSessionName = normalizeRequestedRlmSubagentSessionName(rawName);
 		const requestedModel = normalizeRequestedRlmSubagentModel(rawModel);
 		const requestedThinkingLevel = normalizeRequestedRlmSubagentThinkingLevel(rawThinking);
@@ -12782,6 +12837,7 @@ export class AgentSession {
 			lastActivityMonotonicAt: startedMonotonicAt,
 			settled: false,
 			abort: noopRlmChildAbort,
+			expectedSchema: requestedExpectedSchema,
 			publication: createAgentMessageDeferred(),
 			settlement: createAgentMessageDeferred(),
 			deletionReservation: createAgentMessageDeferred(),
@@ -12828,6 +12884,7 @@ export class AgentSession {
 				model: modelSelection.model,
 				thinkingLevel: requestedThinkingLevel,
 				spawnedByRequestId,
+				expectedSchema: requestedExpectedSchema,
 			}),
 			onSessionPublished: publishChildSession,
 		};
@@ -13028,7 +13085,11 @@ export class AgentSession {
 						}),
 					);
 				}
-				if (!this.registerRlmChildSession(run.id, child) && !run.detachedDeletion) {
+				if (this.registerRlmChildSession(run.id, child) && !run.detachedDeletion) {
+					if (child._childCompletedResult) {
+						run.structuredResult = child._childCompletedResult;
+					}
+				} else if (!run.detachedDeletion) {
 					if (childRuntime && this._subagentRuntimeHost?.releaseRlmSubagentRuntime) {
 						await this._subagentRuntimeHost
 							.releaseRlmSubagentRuntime(childRuntime, subagentOptions, "error")

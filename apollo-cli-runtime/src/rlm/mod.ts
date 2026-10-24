@@ -131,6 +131,8 @@ export interface SpawnOptions {
 	systemPrompt?: string;
 	skills?: string[];
 	timeout?: number;
+	expected_schema?: Record<string, unknown>;
+	expectedSchema?: Record<string, unknown>;
 	[key: string]: unknown;
 }
 
@@ -166,6 +168,8 @@ function _spawnKwargs(opts: SpawnOptions, { requiredName = false, allowCwd = fal
 	if (opts.model !== undefined) kwargs.model = opts.model;
 	const thinking = opts.thinking_level ?? opts.thinkingLevel;
 	if (thinking !== undefined) kwargs.thinking = thinking;
+	const expectedSchema = opts.expected_schema ?? opts.expectedSchema;
+	if (expectedSchema !== undefined) kwargs.expected_schema = expectedSchema;
 	if (allowCwd && opts.cwd !== undefined) kwargs.cwd = opts.cwd;
 	return kwargs;
 }
@@ -275,6 +279,24 @@ export async function progress_note(message: string): Promise<ProgressNoteResult
 
 export const progressNote = progress_note;
 
+export interface CompleteOptions {
+	exit_code?: number;
+	exitCode?: number;
+	summary?: string;
+	data?: Record<string, unknown>;
+	artifacts?: string[];
+}
+
+export async function complete(options: CompleteOptions = {}): Promise<Record<string, unknown>> {
+	const exitCode = options.exit_code ?? options.exitCode ?? 0;
+	return (await op("rlm.complete", {
+		exit_code: exitCode,
+		summary: options.summary,
+		data: options.data,
+		artifacts: options.artifacts,
+	})) as unknown as Record<string, unknown>;
+}
+
 export async function delete_subagent(target: string): Promise<Record<string, unknown>> {
 	return await op("rlm.delete_subagent", { target });
 }
@@ -315,6 +337,7 @@ const _rlmNamespaceTarget = Object.assign(
 		list_subagents,
 		listSubagents,
 		collect,
+		complete,
 		progress_note,
 		progressNote,
 		delete_subagent,
@@ -397,6 +420,7 @@ if (isMainEntry) {
 		list_subagents,
 		listSubagents,
 		collect,
+		complete,
 		progress_note,
 		progressNote,
 		delete_subagent,

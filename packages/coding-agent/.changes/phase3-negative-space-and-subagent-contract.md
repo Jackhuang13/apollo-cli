@@ -1,0 +1,3 @@
+- Added negative space tags ([NEGATIVE - AVOID] and [NEGATIVE - EXPIRED]) and TTL support to continual harness state entries.
+- Added scientific memory ranking with novelty bonus, logarithmic frequency smoothing, and half-life recency decay.
+- Implemented typed subagent result contract with non-blocking JSON schema validation and fallback synthesis in rlm.collect.

@@ -87,6 +87,17 @@ export interface RlmFindModelsResult {
 	models: RlmModelMatch[];
 }
 
+export interface RlmStructuredResult {
+	exit_code: number;
+	status: "succeeded" | "failed" | "timed_out" | "orphaned" | "cancelled";
+	summary?: string;
+	data?: Record<string, unknown>;
+	artifacts?: string[];
+	schema_mismatch?: boolean;
+	schema_validation_errors?: string[];
+	error?: string;
+}
+
 export interface RlmCollectResultEntry {
 	rlm_child_id: string;
 	session_name: string | undefined;
@@ -100,6 +111,8 @@ export interface RlmCollectResultEntry {
 	duration_ms: number | undefined;
 	tool_use_count: number | undefined;
 	replied_since_task: boolean | undefined;
+	/** Strongly typed structured result when reported or inferred at settlement. */
+	result?: RlmStructuredResult;
 }
 
 export interface RlmCollectResult {
@@ -446,6 +459,111 @@ export function createRlmProgressNoteHostHandler(handler: RlmProgressNoteHandler
 	};
 }
 
+/**
+ * Non-blocking lightweight JSON schema validator for child data.
+ * Checks types and required properties without external dependencies.
+ */
+export function validateAgainstExpectedSchema(
+	data: unknown,
+	schema: Record<string, unknown>,
+): { valid: boolean; errors: string[] } {
+	const errors: string[] = [];
+	if (typeof data !== "object" || data === null || Array.isArray(data)) {
+		return { valid: false, errors: ["Data payload must be a non-null object"] };
+	}
+	const dataObj = data as Record<string, unknown>;
+
+	if (Array.isArray(schema.required)) {
+		for (const reqField of schema.required) {
+			if (typeof reqField === "string" && !(reqField in dataObj)) {
+				errors.push(`Missing required field: "${reqField}"`);
+			}
+		}
+	}
+
+	if (schema.properties && typeof schema.properties === "object" && !Array.isArray(schema.properties)) {
+		const props = schema.properties as Record<string, unknown>;
+		for (const [key, propRule] of Object.entries(props)) {
+			if (key in dataObj && typeof propRule === "object" && propRule !== null) {
+				const expectedType = (propRule as Record<string, unknown>).type;
+				const actualValue = dataObj[key];
+				if (typeof expectedType === "string") {
+					if (expectedType === "string" && typeof actualValue !== "string") {
+						errors.push(`Field "${key}" must be a string, got ${typeof actualValue}`);
+					} else if (expectedType === "number" && typeof actualValue !== "number") {
+						errors.push(`Field "${key}" must be a number, got ${typeof actualValue}`);
+					} else if (expectedType === "boolean" && typeof actualValue !== "boolean") {
+						errors.push(`Field "${key}" must be a boolean, got ${typeof actualValue}`);
+					} else if (expectedType === "array" && !Array.isArray(actualValue)) {
+						errors.push(`Field "${key}" must be an array, got ${typeof actualValue}`);
+					} else if (
+						expectedType === "object" &&
+						(typeof actualValue !== "object" || actualValue === null || Array.isArray(actualValue))
+					) {
+						errors.push(`Field "${key}" must be an object, got ${typeof actualValue}`);
+					}
+				}
+			}
+		}
+	}
+
+	return { valid: errors.length === 0, errors };
+}
+
+export interface RlmCompletePayload {
+	exit_code?: number;
+	summary?: string;
+	data?: Record<string, unknown>;
+	artifacts?: string[];
+}
+
+export type RlmCompleteHandler = (payload: RlmCompletePayload) => { accepted: boolean };
+
+/**
+ * Child task completion: `rlm.complete` lets a child agent submit a structured result.
+ */
+export function createRlmCompleteHostHandler(
+	handler: RlmCompleteHandler,
+	expectedSchema?: Record<string, unknown>,
+): HostRequestHandler {
+	return async (payload) => {
+		const rawExitCode = payload.exit_code;
+		const exitCode = typeof rawExitCode === "number" && Number.isSafeInteger(rawExitCode) ? rawExitCode : 0;
+		const summary = typeof payload.summary === "string" ? payload.summary.trim() : undefined;
+		const data =
+			typeof payload.data === "object" && payload.data !== null && !Array.isArray(payload.data)
+				? (payload.data as Record<string, unknown>)
+				: undefined;
+		const artifacts = Array.isArray(payload.artifacts)
+			? payload.artifacts.filter((a): a is string => typeof a === "string" && Boolean(a.trim()))
+			: undefined;
+
+		let schemaMismatch = false;
+		let validationErrors: string[] | undefined;
+		if (expectedSchema && data) {
+			const check = validateAgainstExpectedSchema(data, expectedSchema);
+			if (!check.valid) {
+				schemaMismatch = true;
+				validationErrors = check.errors;
+			}
+		}
+
+		const resultPayload: RlmCompletePayload = {
+			exit_code: exitCode,
+			summary,
+			data,
+			artifacts,
+		};
+		if (schemaMismatch) {
+			(resultPayload as Record<string, unknown>).schema_mismatch = true;
+			(resultPayload as Record<string, unknown>).schema_validation_errors = validationErrors;
+		}
+
+		const { accepted } = handler(resultPayload);
+		return { accepted, schema_mismatch: schemaMismatch, schema_validation_errors: validationErrors };
+	};
+}
+
 export interface RlmSubagentRuntime {
 	session: AgentSession;
 }
@@ -465,6 +583,7 @@ export interface CreateRlmSubagentRuntimeOptions {
 	customTools: ToolDefinition[];
 	includeGoals: boolean;
 	includeCompactSkill: boolean;
+	expectedSchema?: Record<string, unknown>;
 	rlmDepth: number;
 	rlmMaxDepth: number;
 	rlmParentNodeId: string;

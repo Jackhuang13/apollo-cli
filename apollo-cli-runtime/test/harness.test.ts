@@ -110,10 +110,25 @@ test("HarnessState overview summarizes harness state entries", () => {
 		const state = new HarnessState(statePath);
 		state.create_memory("Memory A", "Content A");
 		state.create_prompt_note("Prompt B", "Content B");
+		state.create_memory("Bad Pattern", "Avoid doing this", {
+			negative: true,
+			negative_expires_at: new Date(Date.now() + 100000).toISOString(),
+		});
+		state.create_memory("Old Bad Pattern", "Avoid doing this old thing", {
+			negative: true,
+			negative_expires_at: new Date(Date.now() - 100000).toISOString(),
+		});
 
 		const text = state.overview();
-		assert.ok(text.includes("memory: 1"));
+		assert.ok(text.includes("memory: 3"));
 		assert.ok(text.includes("prompt: 1"));
+		assert.ok(text.includes("[NEGATIVE - AVOID]"));
+		assert.ok(text.includes("[NEGATIVE - EXPIRED]"));
+
+		const fetched = state.get("memory", "bad_pattern");
+		assert.ok(fetched);
+		assert.equal(fetched.hit_count, 1);
+		assert.ok(fetched.isNegativeActive());
 	} finally {
 		fs.rmSync(tempDir, { recursive: true, force: true });
 	}

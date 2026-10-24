@@ -45,6 +45,11 @@ export interface HarnessEntry {
 	path: string;
 	scope?: HarnessScope;
 	source_type?: HarnessSourceType;
+	negative?: boolean;
+	negative_expires_at?: string;
+	hit_count?: number;
+	last_accessed_at?: string;
+	isNegativeActive?: () => boolean;
 	reference: Record<string, unknown>;
 	arguments: Record<string, unknown>;
 	metadata: Record<string, unknown>;
@@ -660,19 +665,65 @@ export function scoreHarnessEntryForQuery(
 	return score;
 }
 
+export function computeHarnessEntryMultiplier(
+	entry: HarnessEntry,
+	now: number = Date.now(),
+): {
+	total: number;
+	typeMultiplier: number;
+	noveltyMultiplier: number;
+	recencyDecay: number;
+	frequencyBoost: number;
+} {
+	const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+	const HALF_LIFE_DAYS = 7;
+	const HALF_LIFE_MS = HALF_LIFE_DAYS * ONE_DAY_MS;
+
+	// 1. TypeMultiplier: observed = 1.0, inferred = 0.5
+	const typeMultiplier = entry.source_type === "inferred" ? 0.5 : 1.0;
+
+	// 2. NoveltyBonus: created in last 24h gets 1.2x bonus; >24h gets 1.0
+	const createdMs = entry.created_at ? Date.parse(entry.created_at) : Number.NaN;
+	const noveltyMultiplier = !Number.isNaN(createdMs) && now - createdMs < ONE_DAY_MS && now >= createdMs ? 1.2 : 1.0;
+
+	// 3. RecencyDecay: exponential decay by half-life based on last_accessed_at (when explicitly tracked)
+	let recencyDecay = 1.0;
+	if (entry.last_accessed_at) {
+		const accessMs = Date.parse(entry.last_accessed_at);
+		if (!Number.isNaN(accessMs) && now > accessMs) {
+			recencyDecay = 0.5 ** ((now - accessMs) / HALF_LIFE_MS);
+		}
+	}
+
+	// 4. FrequencyBoost: logarithmic smoothing 1 + ln(1 + hit_count)
+	const hitCount = typeof entry.hit_count === "number" && entry.hit_count >= 0 ? entry.hit_count : 0;
+	const frequencyBoost = 1 + Math.log(1 + hitCount);
+
+	return {
+		total: typeMultiplier * noveltyMultiplier * recencyDecay * frequencyBoost,
+		typeMultiplier,
+		noveltyMultiplier,
+		recencyDecay,
+		frequencyBoost,
+	};
+}
+
 function compareRankedHarnessEntries(
 	a: HarnessEntry,
 	b: HarnessEntry,
 	terms: HarnessQueryTerms,
 	idf?: Map<string, number>,
 ): number {
-	// Observed entries have full weight; inferred hypotheses decay in ranking weight (discounted by 50%)
-	const aMultiplier = a.source_type === "inferred" ? 0.5 : 1.0;
-	const bMultiplier = b.source_type === "inferred" ? 0.5 : 1.0;
-	const scoreDifference =
-		scoreHarnessEntryForQuery(b, terms, idf) * bMultiplier - scoreHarnessEntryForQuery(a, terms, idf) * aMultiplier;
+	const now = Date.now();
+	const aMultiplier = computeHarnessEntryMultiplier(a, now).total;
+	const bMultiplier = computeHarnessEntryMultiplier(b, now).total;
+	const aBaseScore = scoreHarnessEntryForQuery(a, terms, idf);
+	const bBaseScore = scoreHarnessEntryForQuery(b, terms, idf);
+	const aScore = aBaseScore * aMultiplier;
+	const bScore = bBaseScore * bMultiplier;
+	const scoreDifference = bScore - aScore;
 	if (scoreDifference !== 0) return scoreDifference;
-	// Equal scores tie on stable identifier order (path, title, id), so
+	// Equal scores tie on stable identifier order ([path, title, id]), so
 	// touching unrelated entries never reshuffles equal-score siblings and the
 	// rendered digest keeps a stable prefix for provider prompt-cache reuse.
 	return [a.path, a.title, a.id].join("\0").localeCompare([b.path, b.title, b.id].join("\0"));
@@ -759,8 +810,19 @@ export function formatHarnessStateForPrompt(
 					? ` ref=${compactText(JSON.stringify(entry.reference), maxContentLength)}`
 					: "";
 			const sourceTag = entry.source_type === "inferred" ? " [HYPOTHESIS - UNVERIFIED]" : "";
+			let negativeTag = "";
+			if (entry.negative) {
+				let active = true;
+				if (typeof entry.isNegativeActive === "function") {
+					active = entry.isNegativeActive();
+				} else if (entry.negative_expires_at) {
+					const expiresMs = Date.parse(entry.negative_expires_at);
+					active = Number.isNaN(expiresMs) || Date.now() < expiresMs;
+				}
+				negativeTag = active ? " [NEGATIVE - AVOID]" : " [NEGATIVE - EXPIRED]";
+			}
 			lines.push(
-				`- [${entry.scope ?? "global"}:${entry.id}]${sourceTag} ${entry.title} (${entry.path}, v${entry.version})${referenceText}${argumentsText}: ${compactText(
+				`- [${entry.scope ?? "global"}:${entry.id}]${sourceTag}${negativeTag} ${entry.title} (${entry.path}, v${entry.version})${referenceText}${argumentsText}: ${compactText(
 					entry.content,
 					maxContentLength,
 				)}`,

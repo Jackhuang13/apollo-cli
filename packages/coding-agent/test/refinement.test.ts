@@ -17,6 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	appendGlobalRefinement,
 	applyRefinementProposal,
+	computeHarnessEntryMultiplier,
 	formatHarnessStateForPrompt,
 	getGlobalHarnessStateDir,
 	getHarnessStatePath,
@@ -1181,5 +1182,114 @@ describe("harness digest relevance ranking", () => {
 		});
 		expect(ranked).toContain("[global:obs]");
 		expect(ranked).not.toContain("[global:inf]");
+	});
+
+	it("renders [NEGATIVE - AVOID] and [NEGATIVE - EXPIRED] tags from pure JSON state", () => {
+		const state = loadHarnessState(join(makeTempDir(), "h-neg"), "local");
+		const activeNeg = makeEntry("neg_active", "Active Avoid", "Do not run build.", "2026-10-24T00:00:00.000Z");
+		activeNeg.negative = true;
+		activeNeg.negative_expires_at = new Date(Date.now() + 100000).toISOString();
+
+		const expiredNeg = makeEntry("neg_expired", "Expired Avoid", "Old avoid policy.", "2026-10-24T00:00:00.000Z");
+		expiredNeg.negative = true;
+		expiredNeg.negative_expires_at = new Date(Date.now() - 100000).toISOString();
+
+		state.entries.memory.neg_active = activeNeg;
+		state.entries.memory.neg_expired = expiredNeg;
+
+		const rendered = formatHarnessStateForPrompt(state, { maxEntriesPerKind: 10 });
+		expect(rendered).toContain("[NEGATIVE - AVOID]");
+		expect(rendered).toContain("[NEGATIVE - EXPIRED]");
+	});
+
+	it("applies NoveltyBonus (1.2x) for entries created within 24h and no bonus after 24h", () => {
+		const now = Date.now();
+		// Test multiplier calculation and numerical assertions
+		const entryWithin24h = makeEntry("z_novel", "Title", "Content", new Date(now - 2 * 3600000).toISOString());
+		const entryAfter24h = makeEntry("a_older", "Title", "Content", new Date(now - 25 * 3600000).toISOString());
+		const multWithin = computeHarnessEntryMultiplier(entryWithin24h, now);
+		const multAfter = computeHarnessEntryMultiplier(entryAfter24h, now);
+
+		expect(multWithin.noveltyMultiplier).toBe(1.2);
+		expect(multAfter.noveltyMultiplier).toBe(1.0);
+
+		// Discriminative ranking test: winning entry's ID ('z_novel') is lexicographically AFTER 'a_older'.
+		// If novelty bonus were disabled or broken, tie-breaker [path, title, id] would pick 'a_older'.
+		const state = loadHarnessState(join(makeTempDir(), "h-nov"), "local");
+		state.entries.memory.a_older = entryAfter24h;
+		state.entries.memory.z_novel = entryWithin24h;
+
+		const ranked = formatHarnessStateForPrompt(state, {
+			maxEntriesPerKind: 1,
+			queryTerms: new Map([["title", 1]]),
+		});
+		expect(ranked).toContain("[global:z_novel]");
+		expect(ranked).not.toContain("[global:a_older]");
+	});
+
+	it("applies FrequencyBoost 1 + ln(1 + hit_count) with logarithmic scaling assertions", () => {
+		// Numerical assertions for logarithmic formula
+		const e0 = makeEntry("a_low", "Title", "Content", "2026-01-01T00:00:00.000Z");
+		e0.hit_count = 0;
+		const e1 = makeEntry("m_mid", "Title", "Content", "2026-01-01T00:00:00.000Z");
+		e1.hit_count = Math.E - 1; // 1 + ln(e) = 2.0
+		const e10 = makeEntry("z_high", "Title", "Content", "2026-01-01T00:00:00.000Z");
+		e10.hit_count = 10;
+
+		const now = Date.now();
+		const m0 = computeHarnessEntryMultiplier(e0, now);
+		const m1 = computeHarnessEntryMultiplier(e1, now);
+		const m10 = computeHarnessEntryMultiplier(e10, now);
+
+		expect(m0.frequencyBoost).toBeCloseTo(1.0, 5);
+		expect(m1.frequencyBoost).toBeCloseTo(2.0, 5);
+		expect(m10.frequencyBoost).toBeCloseTo(1 + Math.log(11), 5);
+
+		// Discriminative ranking test: winner 'z_high' has lexicographically trailing ID vs 'a_low'.
+		// If frequency boost is stripped, 'a_low' would win due to tie-breaker.
+		const state = loadHarnessState(join(makeTempDir(), "h-freq"), "local");
+		state.entries.memory.a_low = e0;
+		state.entries.memory.z_high = e10;
+
+		const ranked = formatHarnessStateForPrompt(state, {
+			maxEntriesPerKind: 1,
+			queryTerms: new Map([["title", 1]]),
+		});
+		expect(ranked).toContain("[global:z_high]");
+		expect(ranked).not.toContain("[global:a_low]");
+	});
+
+	it("applies RecencyDecay half-life (7d -> 0.5x, 14d -> 0.25x)", () => {
+		const now = Date.now();
+		const eFresh = makeEntry("z_fresh", "Title", "Content", "2026-01-01T00:00:00.000Z");
+		eFresh.last_accessed_at = new Date(now).toISOString();
+
+		const e7d = makeEntry("m_7d", "Title", "Content", "2026-01-01T00:00:00.000Z");
+		e7d.last_accessed_at = new Date(now - 7 * 86400000).toISOString();
+
+		const e14d = makeEntry("a_14d", "Title", "Content", "2026-01-01T00:00:00.000Z");
+		e14d.last_accessed_at = new Date(now - 14 * 86400000).toISOString();
+
+		// Numerical half-life assertions
+		const mFresh = computeHarnessEntryMultiplier(eFresh, now);
+		const m7d = computeHarnessEntryMultiplier(e7d, now);
+		const m14d = computeHarnessEntryMultiplier(e14d, now);
+
+		expect(mFresh.recencyDecay).toBeCloseTo(1.0, 5);
+		expect(m7d.recencyDecay).toBeCloseTo(0.5, 5);
+		expect(m14d.recencyDecay).toBeCloseTo(0.25, 5);
+
+		// Discriminative ranking test: winner 'z_fresh' (or 'm_7d') has lexicographically trailing ID vs 'a_14d'.
+		// If recency decay is stripped, tie-breaker would select 'a_14d'.
+		const state = loadHarnessState(join(makeTempDir(), "h-decay"), "local");
+		state.entries.memory.a_14d = e14d;
+		state.entries.memory.z_fresh = eFresh;
+
+		const ranked = formatHarnessStateForPrompt(state, {
+			maxEntriesPerKind: 1,
+			queryTerms: new Map([["title", 1]]),
+		});
+		expect(ranked).toContain("[global:z_fresh]");
+		expect(ranked).not.toContain("[global:a_14d]");
 	});
 });

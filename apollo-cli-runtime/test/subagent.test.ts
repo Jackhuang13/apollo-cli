@@ -122,9 +122,17 @@ test("spawn and create_session support both string positional and object paramet
 		assert.equal(lastPayload?.kwargs?.name, "worker-1");
 
 		// spawn with positional prompt and options
-		const sp2 = await spawn("task 2", { name: "worker-2", model: "m-test" });
+		const sp2 = await spawn("task 2", {
+			name: "worker-2",
+			model: "m-test",
+			expected_schema: { type: "object", properties: { score: { type: "number" } } },
+		});
 		assert.equal(lastPayload?.kwargs?.name, "worker-2");
 		assert.equal(lastPayload?.kwargs?.model, "m-test");
+		assert.deepEqual(lastPayload?.kwargs?.expected_schema, {
+			type: "object",
+			properties: { score: { type: "number" } },
+		});
 
 		// create_session with positional args
 		const cs1 = await create_session("session task", "lead");

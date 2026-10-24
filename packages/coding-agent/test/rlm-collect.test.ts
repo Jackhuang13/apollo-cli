@@ -14,7 +14,11 @@ import { AgentSession } from "../src/core/agent-session.js";
 import { AuthStorage } from "../src/core/auth-storage.js";
 import { convertToLlm } from "../src/core/messages.js";
 import { ModelRegistry } from "../src/core/model-registry.js";
-import { createRlmCollectHostHandler, type SubagentRuntimeHost } from "../src/core/rlm-runtime.js";
+import {
+	createRlmCollectHostHandler,
+	type SubagentRuntimeHost,
+	validateAgainstExpectedSchema,
+} from "../src/core/rlm-runtime.js";
 import { SessionManager } from "../src/core/session-manager.js";
 import { SettingsManager } from "../src/core/settings-manager.js";
 import { getCodingAgentFixtureModel } from "./fixture-models.js";
@@ -121,6 +125,9 @@ describe("rlm.collect typed fan-in", () => {
 		expect(entry.settled).toBe(true);
 		expect(entry.answer_preview).toContain("child answer");
 		expect(entry.error).toBeUndefined();
+		expect(entry.result).toBeDefined();
+		expect(entry.result?.exit_code).toBe(0);
+		expect(entry.result?.status).toBe("succeeded");
 	});
 
 	it("collects every direct child when no targets are given and only the selected child when targeted", async () => {
@@ -266,7 +273,91 @@ describe("rlm.collect typed fan-in", () => {
 			rlm_child_id: first.rlm_child_id,
 			status: "cancelled",
 			settled: true,
+			result: {
+				exit_code: 1,
+				status: "cancelled",
+			},
 		});
 		for (const hosted of hostedChildren) hosted.dispose();
+	});
+
+	it("validates data against expected_schema without crashing on mismatch", () => {
+		const schema = {
+			required: ["output_files", "count"],
+			properties: {
+				output_files: { type: "array" },
+				count: { type: "number" },
+			},
+		};
+
+		const validData = { output_files: ["a.txt"], count: 1 };
+		const validCheck = validateAgainstExpectedSchema(validData, schema);
+		expect(validCheck.valid).toBe(true);
+		expect(validCheck.errors).toHaveLength(0);
+
+		const mismatchData = { output_files: "not-an-array" };
+		const mismatchCheck = validateAgainstExpectedSchema(mismatchData, schema);
+		expect(mismatchCheck.valid).toBe(false);
+		expect(mismatchCheck.errors.length).toBeGreaterThanOrEqual(2);
+	});
+
+	it("end-to-end: captures schema mismatch via host request without crashing parent session", async () => {
+		session = makeSession();
+		const parentHandlers = (session as any)._createKernelHostHandlers();
+		const rlmRunHandler = parentHandlers["rlm.run"];
+		expect(rlmRunHandler).toBeDefined();
+
+		const expectedSchema = {
+			required: ["result_code", "data"],
+			properties: {
+				result_code: { type: "number" },
+				data: { type: "object" },
+			},
+		};
+
+		// Invoke spawn via host request ("rlm.run"), mimicking the kernel binding
+		const handle = await rlmRunHandler({
+			prompt: "worker task",
+			kwargs: {
+				name: "worker-schema",
+				expected_schema: expectedSchema,
+			},
+		});
+
+		// Trigger child completion with mismatched data (missing result_code, data is string instead of object)
+		const childRun = (session as any)._activeRlmChildRuns.get(handle.rlm_child_id);
+		expect(childRun).toBeDefined();
+		const childSession = childRun.session as AgentSession;
+		expect(childSession).toBeDefined();
+
+		const handlers = (childSession as any)._createKernelHostHandlers();
+		const completeHandler = handlers["rlm.complete"];
+		expect(completeHandler).toBeDefined();
+
+		const rawMismatchedData = { data: "invalid-type-string" };
+		const reply = await completeHandler({
+			exit_code: 0,
+			data: rawMismatchedData,
+			summary: "Done with mismatch",
+		});
+		expect(reply.accepted).toBe(true);
+		expect(reply.schema_mismatch).toBe(true);
+		expect(reply.schema_validation_errors).toBeDefined();
+		expect(reply.schema_validation_errors.length).toBeGreaterThan(0);
+
+		// Collect results via host request ("rlm.collect")
+		const rlmCollectHandler = parentHandlers["rlm.collect"];
+		expect(rlmCollectHandler).toBeDefined();
+		const collected = await rlmCollectHandler({
+			targets: [handle.rlm_child_id],
+			timeout_ms: 10_000,
+		});
+		expect(collected.results).toHaveLength(1);
+		const entry = collected.results[0];
+		expect(entry.status).toBe("done");
+		expect(entry.result).toBeDefined();
+		expect(entry.result?.schema_mismatch).toBe(true);
+		expect(entry.result?.schema_validation_errors).toBeDefined();
+		expect(entry.result?.data).toEqual(rawMismatchedData);
 	});
 });

@@ -193,6 +193,10 @@ export interface HarnessEntryInit {
 	path?: string;
 	scope?: HarnessScope;
 	source_type?: HarnessSourceType;
+	negative?: boolean;
+	negative_expires_at?: string;
+	hit_count?: number;
+	last_accessed_at?: string;
 	reference?: Record<string, unknown>;
 	arguments?: Record<string, unknown>;
 	metadata?: Record<string, unknown>;
@@ -211,6 +215,10 @@ export class HarnessEntry {
 		path: true,
 		scope: true,
 		source_type: true,
+		negative: true,
+		negative_expires_at: true,
+		hit_count: true,
+		last_accessed_at: true,
 		reference: true,
 		arguments: true,
 		metadata: true,
@@ -227,6 +235,10 @@ export class HarnessEntry {
 	path: string;
 	scope: HarnessScope;
 	source_type: HarnessSourceType;
+	negative: boolean;
+	negative_expires_at: string | null;
+	hit_count: number;
+	last_accessed_at: string;
 	reference: Record<string, unknown>;
 	arguments: Record<string, unknown>;
 	metadata: Record<string, unknown>;
@@ -243,6 +255,10 @@ export class HarnessEntry {
 		this.path = init.path ?? "general";
 		this.scope = init.scope ?? "local";
 		this.source_type = init.source_type ?? "observed";
+		this.negative = Boolean(init.negative);
+		this.negative_expires_at = init.negative_expires_at ?? null;
+		this.hit_count = typeof init.hit_count === "number" && Number.isSafeInteger(init.hit_count) && init.hit_count >= 0 ? init.hit_count : 0;
+		this.last_accessed_at = init.last_accessed_at ?? init.updated_at ?? init.created_at ?? nowIso();
 		this.reference = init.reference ? { ...init.reference } : {};
 		this.arguments = init.arguments ? { ...init.arguments } : {};
 		this.metadata = init.metadata ? { ...init.metadata } : {};
@@ -250,6 +266,19 @@ export class HarnessEntry {
 		this.created_at = init.created_at ?? nowIso();
 		this.updated_at = init.updated_at ?? nowIso();
 		this.version = init.version ?? 1;
+	}
+
+	isNegativeActive(): boolean {
+		if (!this.negative) return false;
+		if (!this.negative_expires_at) return true;
+		const expiresMs = Date.parse(this.negative_expires_at);
+		if (Number.isNaN(expiresMs)) return true;
+		return Date.now() < expiresMs;
+	}
+
+	recordAccess(): void {
+		this.hit_count += 1;
+		this.last_accessed_at = nowIso();
 	}
 
 	toJSON(): Record<string, unknown> {
@@ -261,6 +290,10 @@ export class HarnessEntry {
 			path: this.path,
 			scope: this.scope,
 			source_type: this.source_type,
+			negative: this.negative,
+			negative_expires_at: this.negative_expires_at,
+			hit_count: this.hit_count,
+			last_accessed_at: this.last_accessed_at,
 			reference: { ...this.reference },
 			arguments: { ...this.arguments },
 			metadata: { ...this.metadata },
@@ -444,6 +477,9 @@ function validateRefinementEvent(
 export interface HarnessMutationOptions {
 	id?: string | null;
 	path?: string | null;
+	source_type?: HarnessSourceType;
+	negative?: boolean;
+	negative_expires_at?: string | null;
 	reference?: Record<string, unknown> | null;
 	arguments?: Record<string, unknown> | null;
 	metadata?: Record<string, unknown> | null;
@@ -569,6 +605,10 @@ export class HarnessState {
 					}
 					const sourceType: HarnessSourceType =
 						rawEntry.source_type === "inferred" ? "inferred" : "observed";
+					const negative = Boolean(rawEntry.negative);
+					const negativeExpiresAt = typeof rawEntry.negative_expires_at === "string" ? rawEntry.negative_expires_at : undefined;
+					const hitCount = typeof rawEntry.hit_count === "number" && Number.isSafeInteger(rawEntry.hit_count) && rawEntry.hit_count >= 0 ? rawEntry.hit_count : 0;
+					const lastAccessedAt = typeof rawEntry.last_accessed_at === "string" ? rawEntry.last_accessed_at : undefined;
 					nextEntries[kind][String(entryId)] = new HarnessEntry({
 						id: String(entryId),
 						kind,
@@ -577,6 +617,10 @@ export class HarnessState {
 						path: entryPath,
 						scope,
 						source_type: sourceType,
+						negative,
+						negative_expires_at: negativeExpiresAt,
+						hit_count: hitCount,
+						last_accessed_at: lastAccessedAt,
 						reference: isPlainRecord(rawEntry.reference) ? rawEntry.reference : {},
 						arguments: isPlainRecord(rawEntry.arguments) ? rawEntry.arguments : {},
 						metadata: isPlainRecord(rawEntry.metadata) ? rawEntry.metadata : {},
@@ -746,6 +790,15 @@ export class HarnessState {
 			if (options.path !== undefined && options.path !== null) {
 				existing.path = options.path;
 			}
+			if (options.source_type !== undefined && options.source_type !== null) {
+				existing.source_type = options.source_type;
+			}
+			if (options.negative !== undefined && options.negative !== null) {
+				existing.negative = Boolean(options.negative);
+			}
+			if (options.negative_expires_at !== undefined) {
+				existing.negative_expires_at = options.negative_expires_at;
+			}
 			if (options.reference !== undefined && options.reference !== null) {
 				existing.reference = { ...options.reference };
 			}
@@ -757,6 +810,9 @@ export class HarnessState {
 			}
 			existing.source = source;
 			existing.updated_at = nowIso();
+			// Update refreshes last_accessed_at to maintain recency in ranking
+			// (hit_count is reserved for explicit retrieval queries/prompts).
+			existing.last_accessed_at = nowIso();
 			existing.version += 1;
 			entry = existing;
 		} else {
@@ -767,6 +823,9 @@ export class HarnessState {
 				content,
 				path: options.path ?? "general",
 				scope: this.scope,
+				source_type: options.source_type ?? "observed",
+				negative: options.negative,
+				negative_expires_at: options.negative_expires_at ?? undefined,
 				reference: options.reference ? { ...options.reference } : {},
 				arguments: options.arguments ? { ...options.arguments } : {},
 				metadata: options.metadata ? { ...options.metadata } : {},
@@ -792,7 +851,12 @@ export class HarnessState {
 		if (!KINDS.includes(kind)) {
 			throw new Error(`unknown harness kind ${JSON.stringify(kind)}; expected one of ${JSON.stringify(KINDS)}`);
 		}
-		return this.entries[kind][strippedId ?? id] ?? null;
+		const entry = this.entries[kind][strippedId ?? id] ?? null;
+		if (entry) {
+			entry.recordAccess();
+			this.save();
+		}
+		return entry;
 	}
 
 	delete(
@@ -1228,8 +1292,12 @@ export class HarnessState {
 					if (refText.length > 120) refText = `${refText.slice(0, 117)}...`;
 					referenceSummary = ` ref=${refText}`;
 				}
+				let negativeSummary = "";
+				if (entry.negative) {
+					negativeSummary = entry.isNegativeActive() ? " [NEGATIVE - AVOID]" : " [NEGATIVE - EXPIRED]";
+				}
 				lines.push(
-					`  - [${entry.scope}:${entry.id}] ${entry.title} (${entry.path}, v${entry.version})${referenceSummary}${argumentSummary}: ${summary}`,
+					`  - [${entry.scope}:${entry.id}]${negativeSummary} ${entry.title} (${entry.path}, v${entry.version})${referenceSummary}${argumentSummary}: ${summary}`,
 				);
 			}
 			const overflow = allOfKind.length - records.length;
@@ -1309,7 +1377,14 @@ export class HarnessState {
 				if (b.s !== a.s) return b.s - a.s;
 				return b.recency.localeCompare(a.recency);
 			});
-		return scored.slice(0, limit).map((item) => item.entry);
+		const results = scored.slice(0, limit).map((item) => {
+			item.entry.recordAccess();
+			return item.entry;
+		});
+		if (results.length > 0) {
+			this.save();
+		}
+		return results;
 	}
 
 	snapshot(options: { global_?: boolean; global?: boolean } = {}): Record<string, unknown> {
