@@ -1,0 +1,2 @@
+- Changed IScript kernel skill resolution: skills load only from APOLLO_SKILLS_DIR (default <agent dir>/skills); removed the PRIME_AGENT_SKILLS_DIR and hardcoded home-directory fallbacks.
+- Fixed kernel-side global harness and auth paths missing the agent dir segment.

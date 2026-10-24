@@ -69,10 +69,10 @@ source and is not type-checked by workspace tooling):
   `rlm.run` throws a rename error (matches the host readiness check).
 - **Liveness**: 1s parent-pid watchdog (host dies → kernel shuts down), SIGTERM/SIGHUP kill live
   bash handles and exit, SIGINT interrupts the active cell only.
-- **Skill loading** (`__apollo_import__`): skill roots are `$APOLLO_SKILLS_DIR`/
-  `$PRIME_AGENT_SKILLS_DIR`, `<cwd>/packages/coding-agent/skills`, `~/.apollo/skills`,
-  `~/.prime/skills`; per-skill candidates `src/<name>/mod.ts` etc.; falls back to
-  `createRequire(...).require(spec)` and then a dynamic `import()`.
+- **Skill loading** (`__apollo_import__`): skill roots are `$APOLLO_SKILLS_DIR` (the
+  host defaults it to `<agent dir>/skills`, i.e. `~/.apollo/agent/skills`, when unset)
+  and `<cwd>/packages/coding-agent/skills`; per-skill candidates `src/<name>/mod.ts`
+  etc.; falls back to `createRequire(...).require(spec)` and then a dynamic `import()`.
 
 ## Kernel protocol (v3, shared by both runtimes)
 

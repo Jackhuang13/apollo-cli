@@ -14,9 +14,10 @@ import {
 	statSync,
 	writeSync,
 } from "node:fs";
-import path, { dirname } from "node:path";
+import path, { dirname, join } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { v4 as uuid } from "uuid";
+import { getAgentDir } from "../../config.js";
 import { spawnHidden } from "../../utils/child-process.js";
 import { reapKernelOrphanProcesses, recordOrphanProcessState } from "../orphan-process-journal.js";
 import { buildIScriptBootstrapCode, buildPythonBootstrapCode } from "../tools/iscript.js";
@@ -408,17 +409,23 @@ export class ReplKernelManager {
 			spawnArgs = ["--experimental-strip-types", resolvedRuntime];
 		}
 
+		const childEnv: NodeJS.ProcessEnv = {
+			...process.env,
+			...this.options.env,
+			...(process.platform === "win32" ? { PYTHONUTF8: "1" } : {}),
+			APOLLO_KERNEL_OWNER_PID: String(process.pid),
+			PRIME_AGENT_KERNEL_OWNER_PID: String(process.pid),
+		};
+		// Skill roots are owned by the host: default to the agent dir's skills
+		// folder unless the user (env) or the caller (options.env) chose one.
+		if (!childEnv.APOLLO_SKILLS_DIR) {
+			childEnv.APOLLO_SKILLS_DIR = join(getAgentDir(), "skills");
+		}
 		const child = spawnHidden(spawnCmd, spawnArgs, {
 			cwd: this.options.cwd,
 			// bash journals its process groups under this pid so the host can
 			// reap them if the runtime dies without running its shutdown hook.
-			env: {
-				...process.env,
-				...this.options.env,
-				...(process.platform === "win32" ? { PYTHONUTF8: "1" } : {}),
-				APOLLO_KERNEL_OWNER_PID: String(process.pid),
-				PRIME_AGENT_KERNEL_OWNER_PID: String(process.pid),
-			},
+			env: childEnv,
 			stdio: ["pipe", "pipe", "pipe"],
 		});
 

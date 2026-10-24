@@ -1,5 +1,5 @@
 import { type ChildProcessWithoutNullStreams, spawn as spawnChild } from "node:child_process";
-import { cpSync, existsSync, mkdtempSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -453,6 +453,27 @@ describe("interpreter bootstrap dialects (AC-14, AC-15, AC-20, AC-21)", () => {
 			await expect(manager.start()).rejects.toThrow("Could not resolve apollo-cli-runtime");
 		} finally {
 			process.chdir(previousCwd);
+			vi.unstubAllEnvs();
+			manager?.disposeSync();
+			rmSync(tempDir, { recursive: true, force: true });
+		}
+	});
+
+	it("TS kernel: host injects APOLLO_SKILLS_DIR default from the agent dir (issue: skill path resolution)", async () => {
+		const tempDir = mkdtempSync(join(tmpdir(), "apollo-skilldir-"));
+		const skillSrc = join(tempDir, "skills", "w5skill", "src");
+		mkdirSync(skillSrc, { recursive: true });
+		writeFileSync(join(skillSrc, "mod.ts"), "export const v = 7;\n");
+		vi.stubEnv("APOLLO_AGENT_DIR", tempDir);
+		vi.stubEnv("APOLLO_SKILLS_DIR", "");
+		let manager: ReplKernelManager | undefined;
+		try {
+			manager = new ReplKernelManager({ cwd: tempDir });
+			await manager.start();
+			const res = await manager.execute("(await __apollo_import__('w5skill')).v");
+			expect(res.status).toBe("ok");
+			expect(res.result).toBe("7");
+		} finally {
 			vi.unstubAllEnvs();
 			manager?.disposeSync();
 			rmSync(tempDir, { recursive: true, force: true });

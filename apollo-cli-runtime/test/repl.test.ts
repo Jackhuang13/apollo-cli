@@ -4,7 +4,8 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import readline from "node:readline";
 import { fileURLToPath } from "node:url";
-import { writeFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import os from "node:os";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const RUNTIME_MOD_PATH = path.resolve(__dirname, "../src/rlm/mod.ts");
@@ -15,11 +16,12 @@ class ReplTestDriver {
 	events: any[] = [];
 	eventWaiters: Array<(ev: any) => void> = [];
 
-	constructor() {
+	constructor(extraEnv: Record<string, string> = {}) {
 		this.proc = spawn(process.execPath, [RUNTIME_MOD_PATH], {
 			stdio: ["pipe", "pipe", "inherit"],
 			env: {
 				...process.env,
+				...extraEnv,
 				NODE_OPTIONS: "--experimental-strip-types --no-warnings",
 			},
 		});
@@ -409,5 +411,51 @@ test("repl intercepts syntax errors early when import is present and formats as 
 		assert.ok(res.errorText.includes("^"));
 	} finally {
 		repl.close();
+	}
+});
+
+test("skill resolution: only APOLLO_SKILLS_DIR and dev cwd fallback are honored (legacy roots removed)", async () => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "skillw4-"));
+	const mkSkill = (root: string, name: string) => {
+		const d = path.join(root, name, "src");
+		mkdirSync(d, { recursive: true });
+		writeFileSync(path.join(d, "mod.ts"), "export const v = 42;\n");
+	};
+	try {
+		const fakeHome = path.join(tmp, "home");
+		mkSkill(path.join(fakeHome, ".apollo", "skills"), "skillw4h");
+		mkSkill(path.join(fakeHome, ".prime", "skills"), "skillw4p");
+		const envRoot = path.join(tmp, "envroot");
+		mkSkill(envRoot, "skillw4e");
+		const legacyRoot = path.join(tmp, "legacyroot");
+		mkSkill(legacyRoot, "skillw4l");
+		const repl = new ReplTestDriver({
+			HOME: fakeHome,
+			USERPROFILE: fakeHome,
+			APOLLO_SKILLS_DIR: envRoot,
+			PRIME_AGENT_SKILLS_DIR: legacyRoot,
+		});
+		try {
+			await repl.nextEvent();
+			const ok = await runCell(repl, "w4ok", "(await __apollo_import__('skillw4e')).v");
+			assert.equal(ok.status, "ok", ok.errorText || ok.resultText);
+			assert.equal(ok.resultText, "42");
+			const gone = await runCell(
+				repl, "w4gone",
+				"await (async () => { try { await __apollo_import__('skillw4h'); await __apollo_import__('skillw4p'); return 'resolved'; } catch { return 'unresolved'; } })()",
+			);
+			assert.equal(gone.status, "ok", gone.errorText);
+			assert.equal(gone.resultText, "'unresolved'");
+			const legacy = await runCell(
+				repl, "w4legacy",
+				"await (async () => { try { await __apollo_import__('skillw4l'); return 'resolved'; } catch { return 'unresolved'; } })()",
+			);
+			assert.equal(legacy.status, "ok", legacy.errorText);
+			assert.equal(legacy.resultText, "'unresolved'");
+		} finally {
+			repl.close();
+		}
+	} finally {
+		rmSync(tmp, { recursive: true, force: true });
 	}
 });

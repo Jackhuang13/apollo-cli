@@ -120,7 +120,7 @@ function agentDir(): string {
 		process.env.APOLLO_CODING_AGENT_DIR ||
 		process.env.PRIME_AGENT_CODING_AGENT_DIR ||
 		process.env.PI_CODING_AGENT_DIR ||
-		path.join(os.homedir(), ".apollo");
+		path.join(os.homedir(), ".apollo", "agent");
 	return path.resolve(expandHome(raw));
 }
 

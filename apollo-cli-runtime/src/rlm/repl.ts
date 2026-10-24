@@ -2,7 +2,6 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as moduleBuiltin from "node:module";
-import * as os from "node:os";
 import * as path from "node:path";
 import * as readline from "node:readline";
 import * as util from "node:util";
@@ -1524,7 +1523,7 @@ function _setupSkillModuleResolver(): void {
 	(globalThis as Record<string, unknown>).require = req;
 
 	const skillImportMap = new Map<string, string>();
-	const skillsDirEnv = process.env.APOLLO_SKILLS_DIR || process.env.PRIME_AGENT_SKILLS_DIR;
+	const skillsDirEnv = process.env.APOLLO_SKILLS_DIR;
 	const candidateSkillRoots: string[] = [];
 	if (skillsDirEnv) {
 		for (const part of skillsDirEnv.split(path.delimiter)) {
@@ -1532,8 +1531,6 @@ function _setupSkillModuleResolver(): void {
 		}
 	}
 	candidateSkillRoots.push(path.resolve(process.cwd(), "packages/coding-agent/skills"));
-	candidateSkillRoots.push(path.resolve(os.homedir(), ".apollo/skills"));
-	candidateSkillRoots.push(path.resolve(os.homedir(), ".prime/skills"));
 
 	for (const root of candidateSkillRoots) {
 		try {
