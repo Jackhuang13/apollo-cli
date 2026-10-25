@@ -545,7 +545,7 @@ export function createAgentMessageHostHandlers(
 		"agent_message.list_agents": async () => {
 			throw new Error(
 				"agent_message.list_agents was removed; the family roster now lives in agent_observe.list_agents(). " +
-					"Restart the Python kernel to load the current skills, then call await agent_observe.list_agents().",
+					"Restart the IScript kernel to load the current skills, then call await agent_observe.list_agents().",
 			);
 		},
 		"agent_message.send": async (payload) => {

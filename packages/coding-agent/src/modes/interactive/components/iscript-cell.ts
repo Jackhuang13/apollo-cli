@@ -398,7 +398,7 @@ export class IScriptCellComponent implements Component {
 		const code = this.state.code.trimEnd();
 		const isBashCell = parseIpythonBashCell(code) !== undefined;
 		const preview = previewIpythonCode(code);
-		const baseLang = preview.language === "deno" || preview.language === "python" ? "deno" : preview.language;
+		const baseLang = preview.language === "deno" ? "deno" : preview.language;
 		const languageLabel = isBashCell && baseLang !== "bash" ? `bash · ${baseLang}` : baseLang;
 		const parts = [`${this.marker(details)} ${theme.fg("muted", languageLabel)}`];
 

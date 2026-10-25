@@ -143,16 +143,16 @@ export class InjectedPromptMessageComponent extends Container {
 		}
 		if (this.message.customType === IPYTHON_STATE_RESTORED_CUSTOM_TYPE) {
 			const details = this.message.details as IpythonStateRestoredDetails | undefined;
-			const label = details?.restored === false ? "Started fresh Python kernel" : "Restored Python kernel state";
+			const label = details?.restored === false ? "Started fresh IScript kernel" : "Restored IScript kernel state";
 			return `${theme.fg("accent", "◆")} ${theme.fg("muted", label)}`;
 		}
 		if (this.message.customType === PYTHON_SKILLS_UNAVAILABLE_CUSTOM_TYPE) {
 			const details = this.message.details as PythonSkillsUnavailableDetails | undefined;
 			const skills = details?.skills?.length
-				? ` · ${truncateToWidth(details.skills.join(", "), Math.max(20, 90 - "Python skills unavailable · ".length))}`
+				? ` · ${truncateToWidth(details.skills.join(", "), Math.max(20, 90 - "IScript skills unavailable · ".length))}`
 				: "";
 			const hint = this.expanded ? "" : ` ${expandCollapseHint("app.tools.expand", false)}`;
-			return theme.fg("muted", "Python skills unavailable") + theme.fg("dim", skills + hint);
+			return theme.fg("muted", "IScript skills unavailable") + theme.fg("dim", skills + hint);
 		}
 		if (
 			this.message.customType === RLM_CHILD_FAILURE_CUSTOM_TYPE ||

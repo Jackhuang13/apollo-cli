@@ -11,7 +11,7 @@ describe("Python skills unavailable message", () => {
 			harness.setResponses([
 				(context) => {
 					providerSawUnavailableSkills = context.messages.some((message) =>
-						getMessageText(message).includes("failed to import into the Python kernel"),
+						getMessageText(message).includes("failed to import into the IScript kernel"),
 					);
 					return fauxAssistantMessage("queued turn complete");
 				},

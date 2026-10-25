@@ -144,12 +144,12 @@ The continual harness is the persistent, editable set of prompt notes, memories,
 skills, and subagent specs that lets Prime Agent improve reusable behavior
 outside the token history.
 Use "continual harness" for that persistent artifact layer; keep "RLM" for the
-runtime, Python REPL kernel, and native call interface that executes those artifacts.
+runtime, IScript REPL kernel, and native call interface that executes those artifacts.
 
 Continual harness components:
 - prompt: supplemental prompt notes only. The base system prompt is immutable and MUST NOT be rewritten.
 - memory: durable facts, decisions, failures, preferences, and outcomes.
-- skill: installed Python REPL skill. Skill create/update edits MUST include a \`reference\` object with \`{"type":"python"}\`, a Python import, and a callable or call pattern; they also MUST include an \`arguments\` object describing accepted inputs, required fields, defaults, and constraints. Use \`{}\` for \`arguments\` only when the Python callable truly needs no external inputs. Include the RLM-native call form \`await <skill_import>(...)\`.
+- skill: installed IScript REPL skill. Skill create/update edits MUST include a \`reference\` object with \`{"type":"iscript"}\`, an import, and a callable or call pattern; they also MUST include an \`arguments\` object describing accepted inputs, required fields, defaults, and constraints. Use \`{}\` for \`arguments\` only when the callable truly needs no external inputs. Include the RLM-native call form \`await <skill_import>(...)\`.
 - subagent: reusable delegation specs, including purpose, instructions, and when to invoke. Include the RLM-native call form: compose a concise task prompt and spawn with \`handle = await rlm.spawn("sub-task", name="worker")\`; admission returns immediately with \`rlm_child_id\`, \`name\`, \`session_dir\`, and \`model\`, never the child's answer. Results arrive only through explicit \`agent_message\` replies or files; children reply with \`await agent_message.send(message, receiver_role="parent")\`. Use \`await rlm.list_subagents()\` to recover direct child handles and \`await agent_message.send(..., receiver_role="child", receiver_name=handle.name)\` for follow-ups. Do not invent wrappers like \`run_subagent(...)\`.
 
 Scope and persistence policy:
@@ -184,7 +184,7 @@ JSON only with this exact shape:
       "content": "required for create/update except delete",
       "path": "optional grouping path",
       "source_type": "observed|inferred",
-      "reference": {"type": "python", "import": "package.module", "callable": "function_name", "call_pattern": "await function_name(...)"},
+      "reference": {"type": "iscript", "import": "package.module", "callable": "function_name", "call_pattern": "await function_name(...)"},
       "arguments": {"name": {"type": "string", "required": true, "description": "accepted input"}},
       "metadata": {},
       "reason": "why this edit is useful"
@@ -761,10 +761,10 @@ export function formatHarnessStateForPrompt(
 			: "When to refine the continual harness: after a repeated failure, a reusable tactic emerges, a repeated delegation role should become a subagent spec, a repeated procedure should become a skill, a durable fact/preference should become a memory, a narrow behavioral policy should become a prompt addendum, a user corrects behavior that should persist locally or globally, validation shows a continual harness entry is wrong, or a skill/subagent/memory/prompt note should be created, updated, deleted, or rolled back. Keep continual harness edits small and evidence-backed.",
 		"",
 		includeIpythonExamples
-			? "Call contract: read each installed Python skill's SKILL.md and call its documented module function in the Python REPL; do not assume a `.run` entrypoint. Use `<skill_import> ...` in shell when a CLI exists. Continual harness skill entries are Python REPL skills with an explicit Python `reference` and `arguments` contract. Spawn a continual harness subagent spec by composing a concise task prompt and calling `handle = await rlm.spawn('sub-task', name='worker')`; admission returns immediately with `rlm_child_id`, `name`, `session_dir`, and `model`, never the child's answer. Results arrive only through explicit `agent_message` replies or files; children reply with `await agent_message.send(message, receiver_role='parent')`. Use `await rlm.list_subagents()` to recover direct child handles and `await agent_message.send(..., receiver_role='child', receiver_name=handle.name)` for follow-ups. Do not invent wrappers such as `call_skill(...)`, `run_subagent(...)`, or named subagent registries."
+			? "Call contract: read each installed IScript skill's SKILL.md and call its documented module function in the IScript REPL; do not assume a `.run` entrypoint. Use `<skill_import> ...` in shell when a CLI exists. Continual harness skill entries are IScript REPL skills with an explicit `reference` and `arguments` contract. Spawn a continual harness subagent spec by composing a concise task prompt and calling `handle = await rlm.spawn('sub-task', name='worker')`; admission returns immediately with `rlm_child_id`, `name`, `session_dir`, and `model`, never the child's answer. Results arrive only through explicit `agent_message` replies or files; children reply with `await agent_message.send(message, receiver_role='parent')`. Use `await rlm.list_subagents()` to recover direct child handles and `await agent_message.send(..., receiver_role='child', receiver_name=handle.name)` for follow-ups. Do not invent wrappers such as `call_skill(...)`, `run_subagent(...)`, or named subagent registries."
 			: options.includeShellExamples
-				? "Call contract: use installed skills as shell commands when available (for example `<skill_import> ...`). Continual harness entries are routing/context hints only in sessions without the Python REPL; do not use Python `await`, `asyncio`, or `rlm` examples unless the prompt also documents a Python kernel."
-				: "Call contract: continual harness entries are routing/context hints only in sessions without the Python REPL or shell access; do not use Python `await`, `asyncio`, `rlm`, or shell skill commands unless the prompt also documents those interfaces.",
+				? "Call contract: use installed skills as shell commands when available (for example `<skill_import> ...`). Continual harness entries are routing/context hints only in sessions without the IScript REPL; do not use `await`, `asyncio`, or `rlm` examples unless the prompt also documents an IScript kernel."
+				: "Call contract: continual harness entries are routing/context hints only in sessions without the IScript REPL or shell access; do not use `await`, `asyncio`, `rlm`, or shell skill commands unless the prompt also documents those interfaces.",
 		"",
 	];
 
@@ -1129,19 +1129,21 @@ function validateEdit(edit: RefinementEdit, computedId?: string): string | undef
 	if (edit.action !== "delete" && edit.kind === "skill") {
 		const reference = edit.reference;
 		if (!reference) {
-			return `${edit.action} skill requires python reference`;
+			return `${edit.action} skill requires reference`;
 		}
-		if (reference.type !== "python") {
-			return `${edit.action} skill reference.type must be python`;
+		const refType = reference.type;
+		if (refType !== "iscript" && refType !== "python" && refType !== "typescript" && refType !== "deno") {
+			return `${edit.action} skill reference.type must be 'iscript' or 'python'`;
 		}
 		const hasImport =
 			(typeof reference.import === "string" && reference.import.length > 0) ||
-			(typeof reference.python_import === "string" && reference.python_import.length > 0);
+			(typeof reference.python_import === "string" && reference.python_import.length > 0) ||
+			(typeof reference.module === "string" && reference.module.length > 0);
 		const hasCallable =
 			(typeof reference.callable === "string" && reference.callable.length > 0) ||
 			(typeof reference.call_pattern === "string" && reference.call_pattern.length > 0);
 		if (!hasImport) {
-			return `${edit.action} skill requires python import`;
+			return `${edit.action} skill requires import`;
 		}
 		if (!hasCallable) {
 			return `${edit.action} skill requires callable or call_pattern`;

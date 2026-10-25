@@ -21,7 +21,7 @@ import { v4 as uuid } from "uuid";
 import { getAgentDir } from "../../config.js";
 import { spawnHidden } from "../../utils/child-process.js";
 import { reapKernelOrphanProcesses, recordOrphanProcessState } from "../orphan-process-journal.js";
-import { buildIScriptBootstrapCode, buildPythonBootstrapCode } from "../tools/iscript.js";
+import { buildIScriptBootstrapCode } from "../tools/iscript.js";
 import { tsRuntimeCandidateDirs } from "./bootstrap.js";
 import {
 	AGENT_MESSAGE_DISPLAY_MIME,
@@ -298,9 +298,9 @@ export class ReplKernelManager {
 	}
 
 	/** Dialect of the spawned kernel runtime; set once in doStart() from the resolved runtime. */
-	private _interpreter: "script" | "python" = "script";
+	private _interpreter: "script" = "script";
 
-	get interpreter(): "script" | "python" {
+	get interpreter(): "script" {
 		return this._interpreter;
 	}
 
@@ -312,7 +312,7 @@ export class ReplKernelManager {
 	buildBootstrapCode(): string {
 		if (typeof this.options.bootstrapCode === "string") return this.options.bootstrapCode;
 		const skills = this.options.pythonSkills ?? [];
-		return this.interpreter === "python" ? buildPythonBootstrapCode(skills) : buildIScriptBootstrapCode(skills);
+		return buildIScriptBootstrapCode(skills);
 	}
 
 	get hasBackgroundWork(): boolean {

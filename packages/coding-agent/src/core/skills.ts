@@ -52,13 +52,13 @@ export interface PythonSkill extends BaseSkill {
 
 export type IScriptSkill = PythonSkill;
 export type SkillIScriptMetadata = SkillPythonMetadata;
-export type IScriptSkillRuntimeInfo = PythonSkillRuntimeInfo;
-
-export type Skill = MarkdownSkill | PythonSkill;
-
-export interface PythonSkillRuntimeInfo extends SkillPythonMetadata {
+export interface IScriptSkillRuntimeInfo extends SkillIScriptMetadata {
 	name: string;
 }
+
+export type PythonSkillRuntimeInfo = IScriptSkillRuntimeInfo;
+
+export type Skill = MarkdownSkill | PythonSkill;
 
 export interface LoadSkillsResult {
 	skills: Skill[];
@@ -219,9 +219,9 @@ function detectPythonSkill(
 	};
 }
 
-export function getPythonSkillRuntimeInfo(skills: readonly Skill[]): PythonSkillRuntimeInfo[] {
+export function getIScriptSkillRuntimeInfo(skills: readonly Skill[]): IScriptSkillRuntimeInfo[] {
 	return skills
-		.filter((skill): skill is PythonSkill => skill.kind === "python")
+		.filter((skill): skill is IScriptSkill => skill.kind === "python")
 		.map((skill) => ({
 			name: skill.name,
 			importName: skill.python.importName,
@@ -230,7 +230,7 @@ export function getPythonSkillRuntimeInfo(skills: readonly Skill[]): PythonSkill
 		}));
 }
 
-export const getIScriptSkillRuntimeInfo = getPythonSkillRuntimeInfo;
+export const getPythonSkillRuntimeInfo = getIScriptSkillRuntimeInfo;
 
 /**
  * Load skills from a directory.

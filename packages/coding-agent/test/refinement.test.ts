@@ -387,9 +387,9 @@ describe("harness refinement", () => {
 			error: "create skill requires arguments",
 		},
 		{
-			label: "a skill without a Python reference",
+			label: "a skill without a reference",
 			edit: { action: "create", kind: "skill", id: "unbacked", title: "t", content: "c", arguments: {} },
-			error: "create skill requires python reference",
+			error: "create skill requires reference",
 		},
 		{
 			label: "a skill backed by a non-Python reference",
@@ -402,7 +402,7 @@ describe("harness refinement", () => {
 				reference: { type: "shell", command: "edit" },
 				arguments: {},
 			},
-			error: "create skill reference.type must be python",
+			error: "create skill reference.type must be 'iscript' or 'python'",
 		},
 		{
 			label: "an update of the base system prompt",

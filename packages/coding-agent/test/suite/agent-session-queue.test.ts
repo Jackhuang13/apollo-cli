@@ -2023,7 +2023,7 @@ describe("AgentSession queue regressions", () => {
 			fauxAssistantMessage(fauxToolCall("wait", {}), { stopReason: "toolUse" }),
 			fauxAssistantMessage("original turn complete"),
 			(context) => {
-				const msg = context.messages.find((m) => getMessageText(m).includes("[python-state-restored]"));
+				const msg = context.messages.find((m) => getMessageText(m).includes("[kernel-state-restored]"));
 				if (msg) restoreText = getMessageText(msg);
 				return fauxAssistantMessage("queued turn complete");
 			},

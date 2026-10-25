@@ -43,7 +43,7 @@ export type SerializedGoal = {
 	updated_at?: number;
 };
 
-/** Reply payload for goal.* host requests from the Python kernel. */
+/** Reply payload for goal.* host requests from the kernel. */
 export type GoalHostResponse = {
 	goal: SerializedGoal | null;
 	remaining_tokens: number | null;

@@ -52,7 +52,7 @@ export function extractFileOpsFromMessage(message: AgentMessage, fileOps: FileOp
 /**
  * Extract file operations from a tool result message.
  *
- * The default toolset routes file edits through the ipython kernel: the
+ * The default toolset routes file edits through the iscript kernel: the
  * kernel's edit skill reports structured diff displays (path, oldStr, newStr)
  * that ride on the tool result's details, and no assistant-side tool call
  * ever carries the path. Without this branch, compaction summaries never

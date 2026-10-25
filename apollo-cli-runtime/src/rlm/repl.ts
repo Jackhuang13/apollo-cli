@@ -181,8 +181,7 @@ export function _setHostReplyResolver(resolver: ((type: string, payload: Record<
 /**
  * High-level typed host request: sends `{...payload, type: requestType}` and
  * unwraps the reply envelope. `requestType` is written last so a payload
- * `type` key cannot reroute the request. Mirrors the Python runtime's
- * `rlm.host_request(request_type, payload)`.
+ * `type` key cannot reroute the request.
  */
 export async function op(
 	requestType: string,

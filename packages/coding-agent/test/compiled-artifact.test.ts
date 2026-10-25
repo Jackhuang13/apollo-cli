@@ -221,7 +221,7 @@ describe.skipIf(!archive)("extracted standalone archive", () => {
 		expect(await run(["--version"])).toMatchObject({ code: 0, stdout: `${metadata.version}\n` });
 		const help = await run(["--help"]);
 		expect(help.code, help.stderr).toBe(0);
-		expect(help.stdout).toContain("Python REPL");
+		expect(help.stdout).toContain("IScript REPL");
 	});
 
 	it.skipIf(process.platform !== "darwin")("rejects a tampered copy without changing the verified executable", () => {

@@ -347,7 +347,7 @@ export interface IpythonStateRestoredDetails {
 	restored: boolean;
 }
 
-/** Import names of the pre-imported Python skills that failed to import into the kernel. */
+/** Import names of the pre-imported skills that failed to import into the kernel. */
 export interface PythonSkillsUnavailableDetails {
 	skills: string[];
 }

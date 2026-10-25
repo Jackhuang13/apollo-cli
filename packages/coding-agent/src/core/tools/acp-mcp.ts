@@ -6,7 +6,7 @@ import type { IpythonKernelProvisioner } from "./ipython.js";
 // 48 keeps `mcp_list_tools_<name>` within providers' 64-char tool-name limits.
 const ACP_MCP_SERVER_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,48}$/;
 
-type Interpreter = "script" | "python";
+type Interpreter = "script";
 
 export function acpMcpToolNames(servers: readonly AcpMcpServerConfig[]): string[] {
 	const names: string[] = [];
@@ -26,15 +26,11 @@ export function acpMcpToolNames(servers: readonly AcpMcpServerConfig[]): string[
 
 /**
  * Build the kernel code that lists a server's tools. The TS kernel returns the
- * last expression as the result, so it emits a `JSON.stringify(...)` expression;
- * the Python kernel captures stdout, so it `print`s the serialized tools.
+ * last expression as the result, so it emits a `JSON.stringify(...)` expression.
  */
-export function acpMcpListToolsCode(serverName: string, interpreter: Interpreter): string {
+export function acpMcpListToolsCode(serverName: string, _interpreter: Interpreter = "script"): string {
 	const quoted = JSON.stringify(serverName);
-	if (interpreter === "script") {
-		return `JSON.stringify(await mcp.list_tools(${quoted}))`;
-	}
-	return `print(__import__("json").dumps(await mcp.list_tools(${quoted}), default=str))`;
+	return `JSON.stringify(await mcp.list_tools(${quoted}))`;
 }
 
 /** Build the kernel code that calls one tool on a server, per kernel dialect. */
@@ -42,15 +38,12 @@ export function acpMcpCallToolCode(
 	serverName: string,
 	tool: string,
 	args: Record<string, unknown>,
-	interpreter: Interpreter,
+	_interpreter: Interpreter = "script",
 ): string {
 	const quoted = JSON.stringify(serverName);
 	const toolQuoted = JSON.stringify(tool);
 	const argsJson = JSON.stringify(args ?? {});
-	if (interpreter === "script") {
-		return `JSON.stringify(await mcp.call_tool(${quoted}, ${toolQuoted}, ${argsJson}))`;
-	}
-	return `print(__import__("json").dumps(await mcp.call_tool(${quoted}, ${toolQuoted}, __import__("json").loads(${JSON.stringify(argsJson)})), default=str))`;
+	return `JSON.stringify(await mcp.call_tool(${quoted}, ${toolQuoted}, ${argsJson}))`;
 }
 
 function executionResult(result: ExecuteResult) {

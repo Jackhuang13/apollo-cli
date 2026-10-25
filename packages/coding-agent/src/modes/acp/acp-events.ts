@@ -19,7 +19,7 @@ export interface AcpSessionUpdate {
 	[key: string]: unknown;
 }
 
-/** prime-agent's model-facing tool is the Python REPL; bash is the secondary escape hatch. */
+/** prime-agent's model-facing tool is the IScript REPL; bash is the secondary escape hatch. */
 export const IPYTHON_TOOL_NAME = "ipython";
 
 export function acpToolKind(toolName: string): AcpToolKind {

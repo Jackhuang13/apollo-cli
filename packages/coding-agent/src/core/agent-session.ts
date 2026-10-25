@@ -523,7 +523,7 @@ export interface AgentSessionConfig {
 	allowedToolNames?: string[];
 	/**
 	 * Whether the built-in long-running goals feature is available: the bundled
-	 * goal skill in the Python kernel, its goal.* host handlers, and /goal.
+	 * goal skill in the kernel, its goal.* host handlers, and /goal.
 	 * Default: true.
 	 */
 	includeGoals?: boolean;
@@ -3979,7 +3979,7 @@ export class AgentSession {
 	}
 
 	/**
-	 * Handle a goal.* request from the Python kernel host bridge (the bundled
+	 * Handle a goal.* request from the kernel host bridge (the bundled
 	 * goal skill). All goal state stays host-side; the kernel only sees the
 	 * serialized snake_case response.
 	 */
@@ -4928,7 +4928,7 @@ export class AgentSession {
 	 * Call this when completely done with the session.
 	 */
 	/**
-	 * Async teardown for graceful quit/switch: await the Python kernel's dispose
+	 * Async teardown for graceful quit/switch: await the kernel's dispose
 	 * (which flushes a final namespace snapshot) before the synchronous dispose, so
 	 * the latest state reaches disk instead of racing process exit.
 	 */
@@ -8642,9 +8642,9 @@ export class AgentSession {
 				? ` Variables above the per-variable snapshot limit were removed: ${pruned.join(", ")}.`
 				: "";
 		const content = [
-			"[python-state]",
+			"[kernel-state]",
 			"",
-			`Your Python kernel persisted through compaction; its remaining variables, imports, and helpers are still available.${prunedDetail}${detail}`,
+			`Your IScript kernel persisted through compaction; its remaining variables, imports, and helpers are still available.${prunedDetail}${detail}`,
 		].join("\n");
 		const message = {
 			role: "custom" as const,
@@ -8667,7 +8667,7 @@ export class AgentSession {
 	}
 
 	private _onIpythonStateRestored(result: RestoreResult): void {
-		const lines = ["[python-state-restored]", ""];
+		const lines = ["[kernel-state-restored]", ""];
 		if (result.verified !== undefined) {
 			if (result.verified.length > 0) {
 				lines.push(
@@ -8737,9 +8737,9 @@ export class AgentSession {
 	 * calling them (the placeholder objects only raise on first call).
 	 */
 	private _onPythonSkillsUnavailable(errors: UnavailablePythonSkills): void {
-		const lines = ["[python-skills-unavailable]", ""];
+		const lines = ["[kernel-skills-unavailable]", ""];
 		lines.push(
-			"These installed Python skill modules failed to import into the Python kernel, so calling them raises an error:",
+			"These installed skill modules failed to import into the IScript kernel, so calling them raises an error:",
 		);
 		for (const [name, error] of Object.entries(errors)) {
 			lines.push(`- ${name}: ${error}`);
@@ -11514,7 +11514,7 @@ export class AgentSession {
 		| "activity_stale_ms"
 	> {
 		return {
-			// Project to the registry's snake_case wire shape; the Python kernel
+			// Project to the registry's snake_case wire shape; the kernel
 			// reads activity.tool_name directly from the JSON payload.
 			activity: snapshot.activity
 				? {

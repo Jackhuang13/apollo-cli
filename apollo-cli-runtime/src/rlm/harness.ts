@@ -385,12 +385,12 @@ function requireOptionalRecord(kind: string, entryName: string, field: string, v
 function validateSkillReference(reference: unknown, entryName = ""): Record<string, unknown> {
 	const prefix = entryName ? `skill entry ${JSON.stringify(entryName)} rejected: ` : "";
 	if (!isPlainRecord(reference)) {
-		throw new Error(`${prefix}skill entries require a Python/IScript reference`);
+		throw new Error(`${prefix}skill entries require an IScript/Python reference`);
 	}
 	const normalized = { ...reference };
 	const refType = normalized.type;
 	if (refType !== "python" && refType !== "iscript" && refType !== "typescript" && refType !== "deno") {
-		throw new Error(`${prefix}skill reference.type must be 'python' or 'iscript'`);
+		throw new Error(`${prefix}skill reference.type must be 'iscript' or 'python'`);
 	}
 	const hasImport = ["import", "python_import", "module"].some(
 		(key) => typeof normalized[key] === "string" && Boolean(normalized[key]),
@@ -433,7 +433,7 @@ function validateEntryShape(
 	if (kind === "skill") {
 		if (opts.reference === undefined || opts.reference === null) {
 			if (!opts.existing) {
-				throw new Error(`skill entry ${JSON.stringify(entryName)} rejected: skill entries require a Python/IScript reference`);
+				throw new Error(`skill entry ${JSON.stringify(entryName)} rejected: skill entries require an IScript/Python reference`);
 			}
 		} else {
 			validateSkillReference(opts.reference, entryName);
@@ -1262,7 +1262,7 @@ export class HarnessState {
 		this._syncFromDisk();
 		const lines = [
 			`Harness state (${this.scope}): ${this.file_path}`,
-			"Call contract: installed IScript/Python skills use await <skill_import>(...) or a matching shell CLI; " +
+			"Call contract: installed IScript skills use await <skill_import>(...) or a matching shell CLI; " +
 				"harness skill entries are REPL skills and must include a reference plus arguments. " +
 				"Spawn a subagent spec by composing a concise task prompt and calling " +
 				"handle = await rlm.spawn('sub-task', { name: 'worker' }); admission returns immediately with rlm_child_id, name, session_dir, " +

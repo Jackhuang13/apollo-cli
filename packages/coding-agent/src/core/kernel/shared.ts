@@ -14,7 +14,7 @@ export const KERNEL_BUSY_REUSE_WAIT_MS = 5000;
 export const KERNEL_BUSY_INTERRUPT_INTERVAL_MS = 500;
 export const MAX_LATE_SENT_AGENT_MESSAGE_HANDLERS = 256;
 const KERNEL_BUSY_AFTER_INTERRUPT_MESSAGE =
-	"The Python kernel is still running the previously interrupted cell. Wait and try again, or kill the kernel to start fresh.";
+	"The IScript kernel is still running the previously interrupted cell. Wait and try again, or kill the kernel to start fresh.";
 
 export class KernelBusyAfterInterruptError extends Error {
 	constructor() {
@@ -24,8 +24,8 @@ export class KernelBusyAfterInterruptError extends Error {
 }
 
 /**
- * Handles one typed request from Python code running in the kernel.
- * The returned record is delivered verbatim to the Python caller.
+ * Handles one typed request from code running in the kernel.
+ * The returned record is delivered verbatim to the caller.
  */
 export type HostRequestHandler = (payload: Record<string, unknown>) => Promise<Record<string, unknown>>;
 
@@ -292,8 +292,8 @@ export interface KernelClient {
 	readonly ownerSessionId: string | undefined;
 	readonly isRunning: boolean;
 	readonly hasBackgroundWork: boolean;
-	/** Active kernel dialect: the TS/JS "script" runtime or the Python fallback. */
-	readonly interpreter: "script" | "python";
+	/** Active kernel dialect: the TS/JS "script" runtime. */
+	readonly interpreter: "script";
 	/** Terminal: the kernel died or was torn down; only a fresh manager can serve again. */
 	readonly isDefunct: boolean;
 	start(options?: KernelStartOptions): Promise<void>;

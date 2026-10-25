@@ -213,19 +213,7 @@ describe("ACP MCP kernel snippet dialects (AC-28)", () => {
 		);
 	});
 
-	it("emits a Python print for the Python kernel", () => {
-		expect(acpMcpListToolsCode("TaskTools", "python")).toBe(
-			'print(__import__("json").dumps(await mcp.list_tools("TaskTools"), default=str))',
-		);
-		expect(acpMcpCallToolCode("TaskTools", "search", { q: "x" }, "python")).toBe(
-			`print(__import__("json").dumps(await mcp.call_tool("TaskTools", "search", __import__("json").loads(${JSON.stringify(JSON.stringify({ q: "x" }))})), default=str))`,
-		);
-	});
-
-	it("serializes empty tool arguments for both dialects", () => {
+	it("serializes empty tool arguments for the script dialect", () => {
 		expect(acpMcpCallToolCode("s", "t", {}, "script")).toBe('JSON.stringify(await mcp.call_tool("s", "t", {}))');
-		expect(acpMcpCallToolCode("s", "t", {}, "python")).toBe(
-			'print(__import__("json").dumps(await mcp.call_tool("s", "t", __import__("json").loads("{}")), default=str))',
-		);
 	});
 });

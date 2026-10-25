@@ -66,18 +66,18 @@ const RLM_BOOTSTRAP_RUNTIME_CODE = `
  * bootstrap cell's stdout for this marker so unavailable skills reach the
  * model instead of failing only on first call.
  */
-export const PYTHON_SKILL_IMPORT_ERROR_REPORT_MARKER = "__PRIME_AGENT_PYTHON_SKILL_IMPORT_ERRORS__";
-export const ISCRIPT_SKILL_IMPORT_ERROR_REPORT_MARKER = PYTHON_SKILL_IMPORT_ERROR_REPORT_MARKER;
+export const ISCRIPT_SKILL_IMPORT_ERROR_REPORT_MARKER = "__APOLLO_ISCRIPT_SKILL_IMPORT_ERRORS__";
+export const PYTHON_SKILL_IMPORT_ERROR_REPORT_MARKER = ISCRIPT_SKILL_IMPORT_ERROR_REPORT_MARKER;
 
 /** Map of skill import name -> import error, parsed from a bootstrap cell's stdout. */
-export type UnavailablePythonSkills = Record<string, string>;
-export type UnavailableIScriptSkills = UnavailablePythonSkills;
+export type UnavailableIScriptSkills = Record<string, string>;
+export type UnavailablePythonSkills = UnavailableIScriptSkills;
 
 /** Extract the unavailable-skill report a bootstrap cell printed, or undefined. */
-export function parseUnavailablePythonSkills(stdout: string): UnavailablePythonSkills | undefined {
-	const at = stdout.indexOf(PYTHON_SKILL_IMPORT_ERROR_REPORT_MARKER);
+export function parseUnavailableIScriptSkills(stdout: string): UnavailableIScriptSkills | undefined {
+	const at = stdout.indexOf(ISCRIPT_SKILL_IMPORT_ERROR_REPORT_MARKER);
 	if (at < 0) return undefined;
-	const raw = stdout.slice(at + PYTHON_SKILL_IMPORT_ERROR_REPORT_MARKER.length).trim();
+	const raw = stdout.slice(at + ISCRIPT_SKILL_IMPORT_ERROR_REPORT_MARKER.length).trim();
 	let parsed: unknown;
 	try {
 		parsed = JSON.parse(raw);
@@ -85,7 +85,7 @@ export function parseUnavailablePythonSkills(stdout: string): UnavailablePythonS
 		return undefined;
 	}
 	if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return undefined;
-	const errors: UnavailablePythonSkills = {};
+	const errors: UnavailableIScriptSkills = {};
 	for (const [name, error] of Object.entries(parsed)) {
 		if (typeof error === "string" && error.length > 0) {
 			errors[name] = error;
@@ -94,7 +94,7 @@ export function parseUnavailablePythonSkills(stdout: string): UnavailablePythonS
 	return Object.keys(errors).length > 0 ? errors : undefined;
 }
 
-export const parseUnavailableIScriptSkills = parseUnavailablePythonSkills;
+export const parseUnavailablePythonSkills = parseUnavailableIScriptSkills;
 
 export function buildIScriptBootstrapCode(pythonSkills: readonly PythonSkillRuntimeInfo[] = []): string {
 	const baseCode = [RLM_BOOTSTRAP_HEADER_CODE, RLM_BOOTSTRAP_RUNTIME_CODE].join("\n\n");
@@ -133,7 +133,7 @@ await (async () => {
         }
     }
     if (Object.keys(importErrors).length > 0) {
-        console.log("${PYTHON_SKILL_IMPORT_ERROR_REPORT_MARKER}" + JSON.stringify(importErrors));
+        console.log("${ISCRIPT_SKILL_IMPORT_ERROR_REPORT_MARKER}" + JSON.stringify(importErrors));
     }
 })();
 `.trim();
@@ -142,55 +142,10 @@ await (async () => {
 /** Alias for {@link buildIScriptBootstrapCode}; kept for existing call sites. */
 export const buildRlmBootstrapCode = buildIScriptBootstrapCode;
 
-/**
- * Bootstrap for the Python fallback kernel. The Python runtime starts with an
- * empty cell namespace, so this seeds the runtime globals (rlm, mcp, bash,
- * emit, host_request) and imports every pre-installed skill module into the
- * namespace, printing the shared failure marker for any import that fails.
- */
-export function buildPythonBootstrapCode(pythonSkills: readonly PythonSkillRuntimeInfo[] = []): string {
-	const importNames = [...new Set(pythonSkills.map((skill) => skill.importName))];
-	const skillLoop =
-		importNames.length === 0
-			? ""
-			: `
-_skill_import_errors = {}
-for _skill_name in ${JSON.stringify(importNames)}:
-    try:
-        globals()[_skill_name] = _bootstrap_importlib.import_module(_skill_name)
-    except Exception as _skill_err:
-        _skill_import_errors[_skill_name] = str(_skill_err)
-        globals()[_skill_name] = _bootstrap_unavailable(_skill_name, str(_skill_err))
-if _skill_import_errors:
-    print("${PYTHON_SKILL_IMPORT_ERROR_REPORT_MARKER}" + _bootstrap_json.dumps(_skill_import_errors))
-`.trim();
-
-	return `
-import importlib as _bootstrap_importlib
-import json as _bootstrap_json
-
-import rlm as _bootstrap_rlm
-import rlm.mcp as _bootstrap_mcp
-
-def _bootstrap_unavailable(name, error_text):
-    class _Unavailable:
-        def __getattr__(self, _attr):
-            raise AttributeError(f"Skill {name!r} is unavailable in this kernel: {error_text}")
-    return _Unavailable()
-
-globals().setdefault("rlm", _bootstrap_rlm)
-globals().setdefault("mcp", _bootstrap_mcp)
-globals().setdefault("bash", _bootstrap_rlm.bash)
-globals().setdefault("emit", _bootstrap_rlm.emit)
-globals().setdefault("host_request", _bootstrap_rlm.host_request)
-${skillLoop}
-`.trim();
-}
-
 export const iscriptSchema = Type.Object({
 	code: Type.String({
 		description:
-			"TypeScript / JavaScript code to execute in the persistent IScript (Node) REPL. Top-level await and !cmd shortcuts are supported. Use the target project's own environment for project imports, tests, scripts, CLIs, and dependency checks instead of direct kernel imports.",
+			"TypeScript / JavaScript code to execute in the persistent IScript REPL. Top-level await and !cmd shortcuts are supported. Use the target project's own environment for project imports, tests, scripts, CLIs, and dependency checks instead of direct kernel imports.",
 	}),
 });
 

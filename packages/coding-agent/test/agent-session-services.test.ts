@@ -244,7 +244,7 @@ describe("createAgentSessionFromServices", () => {
 		try {
 			const initialPrompt = session.systemPrompt;
 			expect(initialPrompt).toContain(
-				"Generic MCP connections are accessed through the pre-imported Python `mcp` object in the Python REPL, not as top-level native tool namespaces or installed Python skills.",
+				"Generic MCP connections are accessed through the pre-imported mcp object in the IScript REPL, not as top-level native tool namespaces or installed IScript skills.",
 			);
 			// Zero none+ready catalog rows exist today, so the enabled line is exactly the user-declared servers.
 			expect(enabledServersLine(initialPrompt)).toBe("`filesystem`, `zebra`");

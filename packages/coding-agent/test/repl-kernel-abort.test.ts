@@ -215,7 +215,7 @@ describe("ReplKernelManager abort handling", () => {
 
 		const secondExecutePromise = manager.execute("x = 1");
 		const secondExecuteExpectation = expect(secondExecutePromise).rejects.toThrow(
-			"The Python kernel is still running the previously interrupted cell",
+			"The IScript kernel is still running the previously interrupted cell",
 		);
 		await Promise.resolve();
 		await vi.advanceTimersByTimeAsync(5000);
