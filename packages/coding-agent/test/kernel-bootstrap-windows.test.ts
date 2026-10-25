@@ -148,6 +148,7 @@ describe("Windows kernel subprocesses", () => {
 		});
 		Object.defineProperty(process, "platform", { value: "win32" });
 		process.env.PYTHONUTF8 = "0";
+		delete process.env.APOLLO_KERNEL_DENO;
 	});
 
 	afterEach(() => {
@@ -186,18 +187,18 @@ describe("Windows kernel subprocesses", () => {
 		expect(Object.values(call?.[2]?.env ?? {})).toContain(uv);
 	});
 
-	it("launches the canonical piped CPython REPL directly with UTF-8", async () => {
+	it("launches an explicit interpreter override with the TS runtime path", async () => {
 		const python = join(tempDir, "python.exe");
-		const manager = new ReplKernelManager({ python, cwd: tempDir, env: { PYTHONUTF8: "0" } });
+		const manager = new ReplKernelManager({ python, cwd: tempDir });
 		try {
 			await expect(manager.start()).rejects.toThrow("spawn refused by test");
 			const call = spawn.mock.calls.at(-1);
 			expect(call?.[0]).toBe(python);
-			expect(call?.[1]).toEqual(["-m", "rlm.repl"]);
+			expect(call?.[1]).toEqual([expect.stringMatching(/apollo-cli-runtime[/]src[/]rlm[/]mod.ts$/)]);
 			expect(call?.[2]).toMatchObject({
 				windowsHide: true,
 				stdio: ["pipe", "pipe", "pipe"],
-				env: { PYTHONUTF8: "1", PRIME_AGENT_KERNEL_OWNER_PID: String(process.pid) },
+				env: { PRIME_AGENT_KERNEL_OWNER_PID: String(process.pid) },
 			});
 			expect(call?.[2]?.windowsVerbatimArguments).toBeUndefined();
 		} finally {

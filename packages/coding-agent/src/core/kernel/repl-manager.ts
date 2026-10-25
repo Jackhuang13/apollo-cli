@@ -1,6 +1,7 @@
 // Kernel client for the REPL runtime: the kernel is a JSON-lines subprocess
-// (`python -m rlm.repl`) — requests on stdin, events on stdout, stderr kept as
-// a diagnostics tail. The protocol is documented in prime-agent-runtime/src/rlm/repl.md.
+// (the apollo-cli-runtime IScript runtime, Node or Deno) — requests on stdin,
+// events on stdout, stderr kept as a diagnostics tail. The protocol is
+// documented in prime-agent-runtime/src/rlm/repl.md.
 import type { ChildProcess } from "node:child_process";
 import {
 	chmodSync,
@@ -374,11 +375,10 @@ export class ReplKernelManager {
 		// handlers can dispose a kernel that is still booting.
 		liveKernels.add(this);
 
-		// Resolve the in-package TS runtime before any Python provisioning: when it
-		// resolves, the uv/venv bootstrap (ensureKernelPython) never runs at all.
-		// An explicitly configured interpreter (option or env) selects the Python
-		// branch instead: the user's override wins over the TS default. A deno-named
-		// interpreter still runs the TS runtime.
+		// The IScript TS runtime is mandatory: startup fails if it cannot be
+		// resolved. An explicitly configured interpreter (option or env) wins
+		// over the default host Node binary, and a deno-named interpreter runs
+		// the TS runtime through Deno.
 		const configured = this.options.python ?? process.env.APOLLO_KERNEL_DENO;
 		const candidateRuntimes = [
 			path.resolve("apollo-cli-runtime/src/rlm/mod.ts"),
@@ -416,7 +416,6 @@ export class ReplKernelManager {
 		const childEnv: NodeJS.ProcessEnv = {
 			...process.env,
 			...this.options.env,
-			...(process.platform === "win32" ? { PYTHONUTF8: "1" } : {}),
 			APOLLO_KERNEL_OWNER_PID: String(process.pid),
 			PRIME_AGENT_KERNEL_OWNER_PID: String(process.pid),
 		};
@@ -532,10 +531,11 @@ export class ReplKernelManager {
 			}
 		});
 
-		// The runtime dup2's fd 2 into its protocol pump before ready (repl.py
-		// _setup_fds), so this pipe only ever carries pre-ready bytes; the write
-		// budget caps what lands on disk, and once it is spent the handler keeps
-		// draining but discards (a blocked pipe would wedge a pre-ready kernel).
+		// The runtime redirects stderr into its protocol pump before ready
+		// (repl.ts interceptWrite), so this pipe only ever carries pre-ready
+		// bytes; the write budget caps what lands on disk, and once it is spent
+		// the handler keeps draining but discards (a blocked pipe would wedge a
+		// pre-ready kernel).
 		const stderrLog = this.openStderrLog();
 		const stderrDecoder = new StringDecoder("utf8");
 		let stderrLogBudget = stderrLog?.budget ?? 0;

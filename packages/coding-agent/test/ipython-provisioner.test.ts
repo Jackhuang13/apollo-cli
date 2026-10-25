@@ -196,6 +196,18 @@ describe("IpythonKernelProvisioner", () => {
 		await expect(joined).rejects.toThrow();
 	});
 
+	it("emits IScript startup stage messages on the default (no interpreter override) path", async () => {
+		const provisioner = new IpythonKernelProvisioner(tempDir);
+		try {
+			provisioner.prewarm();
+			const messages: string[] = [];
+			await provisioner.ensure((message) => messages.push(message));
+			expect(messages).toContain("Starting IScript kernel...");
+		} finally {
+			await provisioner.dispose();
+		}
+	});
+
 	it("dispose() settles a startup that is still in flight", async () => {
 		const { python } = writeFakePython();
 		const provisioner = new IpythonKernelProvisioner(tempDir, { python });

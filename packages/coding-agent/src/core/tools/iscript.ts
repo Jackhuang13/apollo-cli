@@ -578,8 +578,8 @@ export class IScriptKernelProvisioner {
 				this.emitStartupProgress(
 					isLegacyPythonOverride ? "Preparing Python runtime..." : "Preparing IScript runtime...",
 				);
-				// Built after start so it matches the kernel's actual dialect (the TS
-				// runtime is preferred when resolvable; otherwise the Python fallback).
+				// Built after start so it matches the kernel's dialect (the IScript
+				// TS runtime, always the Node or Deno engine).
 				const bootstrapCode = m.buildBootstrapCode();
 				const bootstrap = await m.execute(bootstrapCode, {
 					signal: startupSignal,

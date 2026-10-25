@@ -764,6 +764,9 @@ function runtimeCandidateDirs(kind: RuntimeSourceKind): string[] {
 		path.join(getPackageDir(), "apollo-cli-runtime"),
 		path.join(getPackageDir(), "dist", "apollo-cli-runtime"),
 		path.resolve(moduleDir, "..", "..", "..", "..", "apollo-cli-runtime"),
+		// Source checkout: the runtime lives at the repo root (bootstrap.ts is three
+		// levels below packages/coding-agent, so five ups reach the root).
+		path.resolve(moduleDir, "..", "..", "..", "..", "..", "apollo-cli-runtime"),
 		path.resolve(moduleDir, "..", "..", "apollo-cli-runtime"),
 	];
 }

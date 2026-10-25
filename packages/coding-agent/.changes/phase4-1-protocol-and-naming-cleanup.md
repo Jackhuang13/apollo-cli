@@ -1,1 +1,2 @@
 - Refined IScript kernel environment architecture: distinguished Deno and Node VM runtime environments from the iscript REPL tool, enabled dynamic tool labeling based on active environment, eliminated legacy python fields from ready handshake, and updated kernel startup messaging.
+- Fixed IScript kernel startup in clean source checkouts: the TS runtime now also resolves from the repository root, so a build of `packages/coding-agent` is no longer required for kernel discovery.

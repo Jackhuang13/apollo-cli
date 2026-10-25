@@ -3,13 +3,21 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } fro
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { ensureKernelPython, resolveRuntimeSourceDir } from "../../src/core/kernel/bootstrap.js";
+import {
+	ensureKernelPython,
+	resolveRuntimeSourceDir,
+	tsRuntimeCandidateDirs,
+} from "../../src/core/kernel/bootstrap.js";
 import { ReplKernelManager } from "../../src/core/kernel/index.js";
 
-vi.mock("../../src/core/kernel/bootstrap.js", async (importOriginal) => ({
-	...(await importOriginal<typeof import("../../src/core/kernel/bootstrap.js")>()),
-	ensureKernelPython: vi.fn().mockRejectedValue(new Error("TS kernel must not trigger Python provisioning")),
-}));
+vi.mock("../../src/core/kernel/bootstrap.js", async (importOriginal) => {
+	const original = await importOriginal<typeof import("../../src/core/kernel/bootstrap.js")>();
+	return {
+		...original,
+		ensureKernelPython: vi.fn().mockRejectedValue(new Error("TS kernel must not trigger Python provisioning")),
+		tsRuntimeCandidateDirs: vi.fn(original.tsRuntimeCandidateDirs),
+	};
+});
 
 import { buildIScriptBootstrapCode } from "../../src/core/tools/iscript.js";
 import { resolveKernelBashShell } from "../../src/utils/shell.js";
@@ -445,6 +453,9 @@ describe("interpreter bootstrap dialects (AC-14, AC-15, AC-20, AC-21)", () => {
 		const previousCwd = process.cwd();
 		vi.stubEnv("PI_PACKAGE_DIR", tempDir);
 		process.chdir(tempDir);
+		// The repo-root source candidate is always present in a checkout, so the
+		// candidate source must be isolated to exercise the unresolvable path.
+		vi.mocked(tsRuntimeCandidateDirs).mockImplementationOnce(() => [join(tempDir, "absent-runtime")]);
 		let manager: ReplKernelManager | undefined;
 		try {
 			manager = new ReplKernelManager({

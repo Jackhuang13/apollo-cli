@@ -30,6 +30,28 @@
 | A4-ACC-10 | Minor | ✅ 關閉 | 共用 `resolveKernelRuntime(options, env)` 抽出（`iscript.ts:699-717`），label / 進度 / 錯誤文案三處共用；legacy 判定改 `endsWith("node")` 不再子串匹配 |
 | A4-ACC-11 | Hygiene | ⏳ 待提交驗證 | CAPA 已聲明：`bash.ts` 列入本階段配套、`exa-mcp-setup-plan.md` 排除；尚未 commit，commit 時按 AGENTS.md 顯式檔案清單核對 |
 
+### 複驗過程新增發現（A4-ACC-12 / 13 / 14）
+
+- **A4-ACC-12**（Phase 4.1 相關）：`test/kernel-bootstrap-windows.test.ts:189-206` "launches the canonical piped CPython REPL directly with UTF-8" 斷言 override 派生參數為 `["-m", "rlm.repl"]`（舊 Python 語意）——新 doStart override 分岔改派生 TS runtime 路徑，該測試在**無** Deno 環境下亦必紅（初驗複驗命令未含此檔而遺漏）。
+- **A4-ACC-13**（HEAD 既有）：同檔 4 個 ensureKernelPython 用例環境依賴——`bootstrap.ts:978` 以 `APOLLO_KERNEL_DENO ?? PRIME_AGENT_KERNEL_PYTHON` 取 override，開發機設定 Deno 變數時 `spawn[0]` 為 deno 二進位，斷言全紅（21/22 → 16/22）。
+- **A4-ACC-14**（Phase 4.1 相關）：`bootstrap.ts` `runtimeCandidateDirs("script")` 缺 repo-root source candidate（python kind 有 5 層 ```..``` 對應項，script kind 止於 4 層）——乾淨 source checkout（無 dist build，含 CI）在 package-root cwd 下 TS runtime 完全不可解析，doStart 必拋 "Could not resolve apollo-cli-runtime"；本機僅因存在過期 `dist/apollo-cli-runtime`（10-20 build）而誤綠。
+- 清理已修復：A4-ACC-12 測試改斷言新 override 語意（派生 `mod.ts` 路徑，PYTHONUTF8 隨死碼移除）；A4-ACC-13 於 `beforeEach` 清除 `APOLLO_KERNEL_DENO` 恢復測試自含；A4-ACC-14 補 5 層 ```..``` repo-root candidate（安裝佈局下該路徑不存在，無影響），並移除本機過期 `dist/apollo-cli-runtime` 副本。
+- A4-ACC-14 連帶修正 `test/suite/kernel-host-request-round-trip.test.ts:443` "rejects startup when apollo-cli-runtime cannot be resolved"：repo-root candidate 在 checkout 恆在，該測試改以 `vi.mocked(tsRuntimeCandidateDirs).mockImplementationOnce` 隔離 candidate 來源（doStart 經導出函式呼叫，為可 mock seam）。
+
+### 清理完成狀態（2026-10-25）
+
+5 項剩餘清結 + 3 項新增修復皆已完成並實測：
+
+| 項 | 處置 | 實測 |
+|---|---|---|
+| A4-ACC-04R | iscript-kernel.md「Distribution reality」改寫（npm/binary 皆含 apollo-cli-runtime，Python kernel 退役）；刪除 4428 過期 bullet、stale steps 7-8 | 目視 |
+| A4-ACC-05R | repl-manager.ts:2/377-381/535、iscript.ts:581-582 註解清結；PYTHONUTF8 死碼自 doStart childEnv 移除；state-snapshot.ts 檔頭 dill 敘述同步修正（v8 serialize，.dill 為 legacy 路徑名） | 目視 + grep 無殘留 |
+| A4-ACC-08R | 計劃檔 948 → 445-450 | 目視 |
+| A4-ACC-09R | ipython-provisioner.test.ts 新增 default-path "Starting IScript kernel..." 斷言 | 22/22 |
+| A4-ACC-11 | 已於 commit 3376cb9 顯式檔案清單落定（含 bash.ts / CAPA / 驗收文件；排除 exa-mcp-setup-plan） | 已 commit+push |
+| A4-ACC-12/13 | 見上 | windows 21/21（有/無 Deno env） |
+| A4-ACC-14 | 見上 | provisioner 22/22、round-trip 19/19（有/無 Deno env） |
+
 ### 複驗門禁實測（2026-10-25）
 
 | 項目 | 結果 |

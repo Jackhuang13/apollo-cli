@@ -124,10 +124,11 @@ by both runtimes.
 
 ## Distribution reality
 
-The build pipeline (`coding-agent` `copy-assets`, `scripts/copy-binary-assets.mjs`) packages only
-`prime-agent-runtime/`. **Installed npm/binary releases therefore always run the Python kernel**;
-the IScript kernel only works from a source checkout where the cwd-relative discovery in
-`repl-manager.ts` finds `apollo-cli-runtime/src/rlm/mod.ts`.
+The build pipeline (`coding-agent` `copy-assets`, `scripts/copy-binary-assets.mjs`) packages
+`apollo-cli-runtime/` with the package, and a binary build is rejected when
+`apollo-cli-runtime/src/rlm/mod.ts` is missing. **Installed npm/binary releases therefore run
+the IScript TS runtime**; a source checkout resolves the same `mod.ts` via the cwd- and
+package-relative discovery in `repl-manager.ts`. The legacy Python kernel has been retired.
 
 ## Known integration gaps (read before adjusting IScript)
 
@@ -199,10 +200,6 @@ under `--experimental-strip-types`, or whether the dynamic-import fallback carri
 
 - Snapshot: functions/classes are lost on resume (v8 limitation); `_RESERVED_NAMES` must be
   maintained by hand.
-- `src/core/kernel/state-snapshot.ts` header still says "pickled with dill";
-  `repl-manager.ts` header still says the kernel is `python -m rlm.repl`.
-- `test/suite/regressions/4428-*.test.ts` expects `createAllToolDefinitions` to return only
-  `["ipython"]`; current source returns `{iscript, ipython}` — the test is stale.
 - Error/progress strings in `iscript.ts` have been aligned with the active IScript engine ("Starting IScript kernel...",
   "Failed to initialize rlm runtime in the IScript kernel", "Waiting for IScript kernel...").
 
@@ -231,6 +228,3 @@ under `--experimental-strip-types`, or whether the dynamic-import fallback carri
    the Python-venv package list in the prompt with an IScript-accurate one.
 5. Port ACP MCP code injection to JS; fix the goal/goal-skill wording.
 6. Audit the remaining skill TS surfaces against their Python counterparts.
-7. Keep `prime-agent-runtime/src/rlm/repl.md` as the shared wire contract until (and unless) the
-   Python fallback is retired.
-8. Fix the stale 4428 regression test and the Python-lingering strings.

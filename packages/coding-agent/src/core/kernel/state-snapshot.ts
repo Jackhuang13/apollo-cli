@@ -3,9 +3,10 @@
 // resume, leaving the model believing it still has access to variables/imports
 // it defined earlier.
 //
-// Snapshotting is best-effort and per-variable: each top-level name is pickled
-// with `dill` independently, so a single unpicklable object (open file, socket,
-// GPU tensor, …) is skipped and reported rather than aborting the whole snapshot.
+// Snapshotting is best-effort and per-variable: each top-level name is serialized
+// independently (v8 in the IScript runtime; `.dill` remains the legacy path name),
+// so a single unserializable object (open file, socket, GPU tensor, …) is skipped
+// and reported rather than aborting the whole snapshot.
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
