@@ -46,6 +46,8 @@ const RLM_BOOTSTRAP_RUNTIME_CODE = `
             createSession: raiseMissing,
             list_subagents: raiseMissing,
             listSubagents: raiseMissing,
+            list_skills: raiseMissing,
+            listSkills: raiseMissing,
             delete_subagent: raiseMissing,
             deleteSubagent: raiseMissing,
         };

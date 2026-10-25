@@ -114,8 +114,11 @@ by both runtimes.
   artifact dir (`state-snapshot.ts`).
 - **IScript serializer**: each tracked user global is `v8.serialize`d; layout is
   `APOLLO-CLI-KERNEL-SNAPSHOT-V1` magic + `[u32 nameLen][name][u64 payloadLen][v8 payload]`
-  frames; per-variable 16MiB cap, 256MiB total. **Functions and symbols cannot be restored**
-  (unlike Python's dill, which pickles functions) — data restores across resume, code does not.
+  frames; per-variable 16MiB cap (`DEFAULT_SNAPSHOT_MAX_VARIABLE_BYTES`), 256MiB total (`DEFAULT_SNAPSHOT_MAX_BYTES`).
+  - **Unserializable types**: functions (`function`), symbols (`symbol`), promises, weak references (`WeakMap`/`WeakSet`), and live handles/sockets/streams cannot be restored and are skipped at snapshot time with reason `unserializable_type`.
+  - **Class prototypes**: restored objects whose prototypes were user-defined classes lose prototype methods and degrade to plain objects (`prototype_lost`).
+  - **Compaction & Tombstones**: compaction prunes variables exceeding the per-variable 16MiB cap. Pruned variables receive an active tombstone in `globalThis` that raises a descriptive `ReferenceError` on access naming the size and reason, and can be cleanly restored or overwritten with new values.
+  - **Restore diagnostics**: `restoreState()` reconciles both the binary payload and the `kernel-state.json` manifest (`skipped` and `pruned` lists), notifying the host and model about all omitted or caveat-laden variables via `[python-state-restored]`.
 - **Cross-runtime snapshots are not interoperable**: a Python-era `.dill` file will not parse in
   the IScript runtime and vice versa. A session that switches runtimes restores to an empty
   namespace (the on-disk file is preserved, not clobbered).

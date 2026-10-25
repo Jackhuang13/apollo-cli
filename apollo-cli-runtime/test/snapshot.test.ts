@@ -191,3 +191,92 @@ test("restore probe detects prototype_lost for custom class instances", () => {
 		fs.rmSync(tempDir, { recursive: true, force: true });
 	}
 });
+
+test("compaction pruning installs recoverable tombstones and reports skipped/pruned in restore", () => {
+	const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "apollo-snap-prune-"));
+	const snapPath = path.join(tempDir, "kernel-state.snap");
+	const manifestPath = path.join(tempDir, "kernel-state.json");
+	const g = globalThis as Record<string, unknown>;
+
+	try {
+		g.normalVar = "ok";
+		g.hugeVar = Buffer.alloc(200); // oversized with maxVariableBytes = 100
+		recordUserGlobal("normalVar");
+		recordUserGlobal("hugeVar");
+
+		let snapPayload: any;
+		_setProtoWriter((line: string) => {
+			try {
+				const parsed = JSON.parse(line);
+				if (parsed.event === "done" && parsed.id === "snap-prune") snapPayload = parsed;
+			} catch {}
+		});
+
+		try {
+			handleSnapshot({
+				id: "snap-prune",
+				path: snapPath,
+				manifest_path: manifestPath,
+				max_variable_bytes: 100,
+				prune_oversized: true,
+			});
+		} finally {
+			_setProtoWriter((line: string) => process.stdout.write(`${line}\n`));
+		}
+
+		assert.ok(snapPayload);
+		assert.ok(snapPayload.saved.includes("normalVar"));
+		assert.ok(!snapPayload.saved.includes("hugeVar"));
+		assert.ok(snapPayload.pruned.some((p: any) => p.name === "hugeVar"));
+
+		// Accessing hugeVar raises ReferenceError with compaction details
+		assert.throws(
+			() => {
+				const _val = g.hugeVar;
+			},
+			/was removed during compaction/i,
+		);
+
+		// Overwriting hugeVar clears the tombstone and restores normal access
+		g.hugeVar = 42;
+		assert.equal(g.hugeVar, 42);
+
+		// Clean up for restore check
+		delete g.normalVar;
+		delete g.hugeVar;
+
+		let restorePayload: any;
+		_setProtoWriter((line: string) => {
+			try {
+				const parsed = JSON.parse(line);
+				if (parsed.event === "done" && parsed.id === "restore-prune") restorePayload = parsed;
+			} catch {}
+		});
+
+		try {
+			handleRestore({
+				id: "restore-prune",
+				path: snapPath,
+				manifest_path: manifestPath,
+			});
+		} finally {
+			_setProtoWriter((line: string) => process.stdout.write(`${line}\n`));
+		}
+
+		assert.ok(restorePayload);
+		assert.ok(restorePayload.restored.includes("normalVar"));
+		assert.ok(restorePayload.pruned.some((p: any) => p.name === "hugeVar"));
+
+		// Re-installed tombstone after restore
+		assert.throws(
+			() => {
+				const _val = g.hugeVar;
+			},
+			/was removed during compaction/i,
+		);
+	} finally {
+		delete g.normalVar;
+		delete g.hugeVar;
+		fs.rmSync(tempDir, { recursive: true, force: true });
+	}
+});

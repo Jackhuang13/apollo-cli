@@ -23,6 +23,47 @@ interface ActiveCellContext {
 	execution: CellExecution | null;
 }
 
+const _denoRuntimeObj = (globalThis as unknown as { Deno?: { version?: { deno?: string } } }).Deno;
+export const IS_DENO_KERNEL =
+	typeof _denoRuntimeObj === "object" &&
+	_denoRuntimeObj !== null &&
+	typeof _denoRuntimeObj.version?.deno === "string";
+export const DENO_KERNEL_VERSION = IS_DENO_KERNEL ? _denoRuntimeObj?.version?.deno : undefined;
+export const KERNEL_RUNTIME_LABEL = IS_DENO_KERNEL
+	? `deno ${DENO_KERNEL_VERSION ?? ""}`.trim()
+	: `node ${process.versions.node}`;
+
+interface PrunedVariableInfo {
+	size_bytes: number;
+	reason: string;
+}
+
+const _prunedGlobals = new Map<string, PrunedVariableInfo>();
+
+export function _installPrunedTombstone(name: string, info: PrunedVariableInfo): void {
+	_prunedGlobals.set(name, info);
+	_userGlobals.delete(name);
+	Object.defineProperty(globalThis, name, {
+		configurable: true,
+		enumerable: false,
+		get() {
+			const mb = (info.size_bytes / (1024 * 1024)).toFixed(1);
+			throw new ReferenceError(
+				`Variable '${name}' was removed during compaction (${info.reason}: ${mb} MiB > 16 MiB limit). Re-create or reload it if needed.`,
+			);
+		},
+		set(newValue: unknown) {
+			_prunedGlobals.delete(name);
+			Object.defineProperty(globalThis, name, {
+				value: newValue,
+				writable: true,
+				enumerable: true,
+				configurable: true,
+			});
+			recordUserGlobal(name);
+		},
+	});
+}
 const _cellStorage = new AsyncLocalStorage<ActiveCellContext>();
 let _fallbackCellId: string | null = null;
 let _fallbackExecution: CellExecution | null = null;
@@ -329,15 +370,147 @@ export function recordUserGlobal(name: string): void {
 	}
 }
 
+function _stripTypeScriptFallback(code: string): string {
+	let parsed: any;
+	try {
+		parsed = parseSync(code, { sourceFilename: "strip.ts" });
+	} catch {
+		return code;
+	}
+	if (!parsed || !parsed.program) return code;
+
+	const spans: Array<[number, number]> = [];
+
+	function addSpan(start: unknown, end: unknown): void {
+		if (typeof start === "number" && typeof end === "number" && end > start) {
+			spans.push([start, end]);
+		}
+	}
+
+	function walk(node: any): void {
+		if (!node || typeof node !== "object") return;
+
+		// 1. Declarations to completely blank out
+		if (
+			node.type === "TSInterfaceDeclaration" ||
+			node.type === "TSTypeAliasDeclaration" ||
+			node.type === "TSTypeAnnotation" ||
+			node.type === "TSTypeParameterDeclaration" ||
+			node.type === "TSTypeParameterInstantiation" ||
+			node.type === "TSTypeQuery" ||
+			(node.type === "ImportDeclaration" && node.importKind === "type")
+		) {
+			addSpan(node.start, node.end);
+			return;
+		}
+
+		// 2. Import specifier: import { type A, b } from "mod"
+		if (node.type === "ImportDeclaration") {
+			const specifiers = node.specifiers || [];
+			const typeSpecs = specifiers.filter((s: any) => s.type === "ImportSpecifier" && s.importKind === "type");
+			if (typeSpecs.length > 0 && typeSpecs.length === specifiers.length) {
+				addSpan(node.start, node.end);
+				return;
+			}
+			for (const s of typeSpecs) {
+				const after = code.slice(s.end);
+				const commaMatch = after.match(/^\s*,/);
+				if (commaMatch) {
+					addSpan(s.start, s.end + commaMatch[0].length);
+				} else {
+					const before = code.slice(0, s.start);
+					const commaMatchBefore = before.match(/,\s*$/);
+					if (commaMatchBefore) {
+						addSpan(s.start - commaMatchBefore[0].length, s.end);
+					} else {
+						addSpan(s.start, s.end);
+					}
+				}
+			}
+		}
+
+		// 3. TSAsExpression & TSSatisfiesExpression: keep expr, blank from expr.end to node.end
+		if (node.type === "TSAsExpression" || node.type === "TSSatisfiesExpression") {
+			addSpan(node.expression.end, node.end);
+			walk(node.expression);
+			return;
+		}
+
+		// 4. TSNonNullExpression: expr!
+		if (node.type === "TSNonNullExpression") {
+			addSpan(node.expression.end, node.end);
+			walk(node.expression);
+			return;
+		}
+
+		// 5. TSTypeAssertion: <string>expr
+		if (node.type === "TSTypeAssertion") {
+			addSpan(node.start, node.expression.start);
+			walk(node.expression);
+			return;
+		}
+
+		// 6. Class implements clause
+		if (Array.isArray(node.implements) && node.implements.length > 0) {
+			for (const impl of node.implements) {
+				addSpan(impl.start, impl.end);
+			}
+			const firstImpl = node.implements[0];
+			if (node.id && firstImpl) {
+				const classHead = code.slice(node.id.end, firstImpl.start);
+				const match = classHead.match(/\bimplements\b/);
+				if (match && match.index !== undefined) {
+					const kwStart = node.id.end + match.index;
+					addSpan(kwStart, firstImpl.start);
+				}
+			}
+		}
+
+		// 7. Modifiers in PropertyDefinition / MethodDefinition (accessibility, readonly, override)
+		if (node.type === "PropertyDefinition" || node.type === "MethodDefinition") {
+			if (node.key) {
+				const declHead = code.slice(node.start, node.key.start);
+				const modRegex = /\b(public|private|protected|readonly|override)\b/g;
+				let m: RegExpExecArray | null;
+				while ((m = modRegex.exec(declHead)) !== null) {
+					addSpan(node.start + m.index, node.start + m.index + m[0].length);
+				}
+			}
+		}
+
+		for (const key of Object.keys(node)) {
+			if (key === "implements") continue;
+			const child = node[key];
+			if (Array.isArray(child)) {
+				for (const item of child) walk(item);
+			} else if (child && typeof child === "object") {
+				walk(child);
+			}
+		}
+	}
+
+	walk(parsed.program);
+
+	spans.sort((a, b) => b[0] - a[0]);
+
+	let result = code;
+	for (const [start, end] of spans) {
+		const original = result.slice(start, end);
+		const blanked = original.replace(/[^\n\r]/g, " ");
+		result = result.slice(0, start) + blanked + result.slice(end);
+	}
+	return result;
+}
+
 function _stripTypeScript(code: string): string {
 	if (typeof moduleBuiltin.stripTypeScriptTypes === "function") {
 		try {
 			return moduleBuiltin.stripTypeScriptTypes(code, { mode: "strip" });
 		} catch {
-			// Fall back to raw code if strip fails on partial snippet
+			// Fall back to AST-based strip if native strip fails
 		}
 	}
-	return code;
+	return _stripTypeScriptFallback(code);
 }
 
 interface TopLevelStatement {
@@ -816,12 +989,26 @@ function _knownFailureHint(err: unknown): string | undefined {
 	if (err.name === "PermissionDenied" || /Requires .* permission/.test(err.message)) {
 		return "Hint: this IScript kernel runs on Deno with specific permissions; ensure operations are permitted under -A flags or host environment.";
 	}
+	if (err.name === "ReferenceError" && /\bBuffer is not defined\b/.test(err.message) && IS_DENO_KERNEL) {
+		return "Hint: this IScript kernel runs on Deno; Buffer is not global by default. Import it from 'node:buffer' or use Uint8Array.";
+	}
+	if (err.name === "TypeError" && /timer\.unref is not a function/.test(err.message) && IS_DENO_KERNEL) {
+		return "Hint: this IScript kernel runs on Deno; Timer objects do not have .unref(). Use Deno.unrefTimer(timerId).";
+	}
+	if (
+		(err.name === "TypeError" || err.name === "Error") &&
+		(/node:child_process\/promises/.test(err.message) || /child_process.*promises is undefined/.test(err.message)) &&
+		IS_DENO_KERNEL
+	) {
+		return "Hint: this IScript kernel runs on Deno; 'node:child_process/promises' is not supported. Use node:child_process callback API with node:util.promisify or use Deno.Command.";
+	}
 	return undefined;
 }
 
 function _formatTraceback(err: unknown, cellNum: number): { ename: string; evalue: string; traceback: string[] } {
 	const cellTag = `<cell-${cellNum}>`;
 	const hint = _knownFailureHint(err);
+	const runtimeTag = `[Kernel Runtime: ${KERNEL_RUNTIME_LABEL}]`;
 
 	if (err instanceof ReplSyntaxError) {
 		const ename = "SyntaxError";
@@ -862,6 +1049,7 @@ function _formatTraceback(err: unknown, cellNum: number): { ename: string; evalu
 			`    at ${cellTag}:${line}:${col}`,
 			sourceLine,
 			caret,
+			runtimeTag,
 		];
 		if (hint) traceback.push(hint);
 		return { ename, evalue, traceback };
@@ -877,11 +1065,12 @@ function _formatTraceback(err: unknown, cellNum: number): { ename: string; evalu
 		if (!lines.some((l) => l.includes(cellTag))) {
 			lines.push(`    at ${cellTag}:1:1`);
 		}
+		lines.push(runtimeTag);
 		if (hint) lines.push(hint);
 		return { ename, evalue, traceback: lines };
 	}
 	const text = String(err);
-	const traceback = [`Error: ${text}`, `    at ${cellTag}:1:1`];
+	const traceback = [`Error: ${text}`, `    at ${cellTag}:1:1`, runtimeTag];
 	if (hint) traceback.push(hint);
 	return {
 		ename: "Error",
@@ -1111,8 +1300,10 @@ export function handleSnapshot(msg: Record<string, unknown>): void {
 					size_bytes: serialized.byteLength,
 				});
 				if (pruneOversized) {
-					delete g[name];
-					_userGlobals.delete(name);
+					_installPrunedTombstone(name, {
+						size_bytes: serialized.byteLength,
+						reason: "exceeds_max_variable_bytes",
+					});
 					pruned.push({ name, type: typeName, size_bytes: serialized.byteLength });
 				}
 				continue;
@@ -1141,8 +1332,10 @@ export function handleSnapshot(msg: Record<string, unknown>): void {
 					size_bytes: item.payloadBytes,
 				});
 				if (pruneOversized) {
-					delete g[item.name];
-					_userGlobals.delete(item.name);
+					_installPrunedTombstone(item.name, {
+						size_bytes: item.payloadBytes,
+						reason: "exceeds_max_bytes",
+					});
 					pruned.push({ name: item.name, type: item.type, size_bytes: item.payloadBytes });
 				}
 				continue;
@@ -1341,6 +1534,8 @@ export function handleRestore(msg: Record<string, unknown>): void {
 
 	try {
 		let snapshotTypes: Record<string, string> = {};
+		let manifestSkipped: Array<{ name: string; reason: string }> = [];
+		let manifestPruned: Array<{ name: string; size_bytes?: number; reason?: string }> = [];
 		const explicitManifestPath = typeof msg.manifest_path === "string" ? msg.manifest_path : "";
 		const candidateManifestPaths = [
 			explicitManifestPath,
@@ -1352,14 +1547,41 @@ export function handleRestore(msg: Record<string, unknown>): void {
 			if (fs.existsSync(mPath)) {
 				try {
 					const manifestJson = JSON.parse(fs.readFileSync(mPath, "utf8"));
-					if (manifestJson && typeof manifestJson.types === "object" && manifestJson.types !== null) {
-						snapshotTypes = manifestJson.types as Record<string, string>;
+					if (manifestJson && typeof manifestJson === "object") {
+						if (typeof manifestJson.types === "object" && manifestJson.types !== null) {
+							snapshotTypes = manifestJson.types as Record<string, string>;
+						}
+						if (Array.isArray(manifestJson.skipped)) {
+							manifestSkipped = manifestJson.skipped
+								.map((s: { name?: unknown; reason?: unknown }) => ({
+									name: String(s?.name ?? ""),
+									reason: String(s?.reason ?? "skipped_at_snapshot"),
+								}))
+								.filter((s: { name: string; reason: string }) => Boolean(s.name));
+						}
+						if (Array.isArray(manifestJson.pruned)) {
+							manifestPruned = manifestJson.pruned
+								.map((p: { name?: unknown; size_bytes?: unknown }) => ({
+									name: String(p?.name ?? ""),
+									size_bytes: typeof p?.size_bytes === "number" ? p.size_bytes : 0,
+									reason: "exceeds_max_variable_bytes",
+								}))
+								.filter((p: { name: string; size_bytes: number; reason: string }) => Boolean(p.name));
+						}
 						break;
 					}
 				} catch {
 					// Fall back gracefully if manifest is not valid JSON
 				}
 			}
+		}
+
+		// Re-install tombstones for pruned variables so access after restore fails informatively
+		for (const prunedItem of manifestPruned) {
+			_installPrunedTombstone(prunedItem.name, {
+				size_bytes: prunedItem.size_bytes ?? 0,
+				reason: prunedItem.reason ?? "exceeds_max_variable_bytes",
+			});
 		}
 
 		const buf = fs.readFileSync(sourcePath);
@@ -1436,6 +1658,8 @@ export function handleRestore(msg: Record<string, unknown>): void {
 			verified,
 			unverified,
 			failed,
+			skipped: manifestSkipped,
+			pruned: manifestPruned.map((p) => ({ name: p.name, reason: p.reason ?? "exceeds_max_variable_bytes" })),
 		});
 	} catch (err) {
 		_sendProto({
@@ -1454,7 +1678,7 @@ export function handleListNames(msg: Record<string, unknown>): void {
 	const types: Record<string, string> = {};
 
 	for (const name of [..._userGlobals].sort()) {
-		if (_RESERVED_NAMES.has(name) || name.startsWith("_")) continue;
+		if (_RESERVED_NAMES.has(name) || name.startsWith("_") || _prunedGlobals.has(name)) continue;
 		if (!(name in g)) continue;
 		names.push(name);
 		types[name] = _classifyType(g[name]);
@@ -1521,6 +1745,19 @@ function _setupStdoutStderrInterception(): void {
 	console.error = (...args: unknown[]) => _sendStream("stderr", formatConsoleArgs(args));
 }
 
+export interface RegisteredSkillInfo {
+	name: string;
+	path: string;
+	status: "available" | "unavailable";
+	error?: string;
+}
+
+const _registeredSkills: RegisteredSkillInfo[] = [];
+
+export function getRegisteredSkills(): RegisteredSkillInfo[] {
+	return [..._registeredSkills];
+}
+
 function _setupSkillModuleResolver(): void {
 	const req = moduleBuiltin.createRequire(path.join(process.cwd(), "__repl__.js"));
 	(globalThis as Record<string, unknown>).__apollo_require__ = req;
@@ -1536,6 +1773,8 @@ function _setupSkillModuleResolver(): void {
 	}
 	candidateSkillRoots.push(path.resolve(process.cwd(), "packages/coding-agent/skills"));
 
+	_registeredSkills.length = 0;
+
 	for (const root of candidateSkillRoots) {
 		try {
 			if (!fs.existsSync(root)) continue;
@@ -1548,13 +1787,22 @@ function _setupSkillModuleResolver(): void {
 					path.join(skillDir, "src", entry.name, "mod.ts"),
 					path.join(skillDir, "src", "mod.ts"),
 				];
+				let foundPath: string | undefined;
 				for (const c of candidates) {
 					if (fs.existsSync(c)) {
+						foundPath = c;
 						skillImportMap.set(entry.name, c);
 						skillImportMap.set(underscored, c);
 						skillImportMap.set(`@apollo/skill-${entry.name}`, c);
 						break;
 					}
+				}
+				if (foundPath) {
+					_registeredSkills.push({
+						name: entry.name,
+						path: foundPath,
+						status: "available",
+					});
 				}
 			}
 		} catch {

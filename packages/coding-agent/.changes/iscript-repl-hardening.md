@@ -1,0 +1,6 @@
+- Added kernel boot circuit breaking after three consecutive startup failures, with automatic cooldown and manual restart resets.
+- Added AST-based TypeScript type stripping fallback using the bundled OXC parser for Deno kernel execution.
+- Added runtime labels and failure hints for Deno-specific module differences in IScript tracebacks.
+- Added `rlm.list_skills()` to introspect registered skills and their health status inside the kernel.
+- Added recoverable tombstones for variables pruned during compaction to explain subsequent ReferenceErrors.
+- Enhanced state restoration notifications to report variables skipped at snapshot time or pruned during compaction.

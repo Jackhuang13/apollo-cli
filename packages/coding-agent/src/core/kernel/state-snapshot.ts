@@ -39,6 +39,10 @@ export interface RestoreResult {
 	unverified?: { name: string; reason: string }[];
 	/** Names present in the snapshot that failed to revive, with a short reason. */
 	failed: { name: string; reason: string }[];
+	/** Names skipped during snapshot (e.g. function, over-cap), with a short reason. */
+	skipped?: { name: string; reason: string }[];
+	/** Names pruned during compaction before/at snapshot. */
+	pruned?: { name: string; reason: string }[];
 	path: string;
 }
 

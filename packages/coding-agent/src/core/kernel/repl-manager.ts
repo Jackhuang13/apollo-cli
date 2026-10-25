@@ -71,6 +71,17 @@ import {
 } from "./state-snapshot.js";
 
 const REPL_PROTOCOL_VERSION = 3;
+export const MAX_CONSECUTIVE_BOOT_FAILURES = 3;
+export const BOOT_CIRCUIT_COOLDOWN_MS = 30_000;
+
+export class KernelBootCircuitBrokenError extends Error {
+	constructor(consecutive: number, phase: string, lastError: string) {
+		super(
+			`Kernel failed to boot ${consecutive} consecutive times (Phase: ${phase}). Last error: ${lastError}. Auto-restart is paused for ${BOOT_CIRCUIT_COOLDOWN_MS / 1000}s; fix the environment or binary before retrying.`,
+		);
+		this.name = "KernelBootCircuitBrokenError";
+	}
+}
 const READY_TIMEOUT_MS = 30_000;
 const REPAIR_STEP_TIMEOUT_MS = 30_000;
 // Runtime-minted host-request ids never repeat; the bound only guards a
@@ -261,6 +272,11 @@ export class ReplKernelManager {
 	};
 	private rebootstrapPromise?: Promise<boolean>;
 	private teardownInFlight = 0;
+	/** Consecutive boot failures tracked for circuit breaker. */
+	private consecutiveBootFailures = 0;
+	private lastBootFailureTime = 0;
+	private lastBootFailurePhase = "unknown";
+	private lastBootFailureError = "";
 
 	constructor(options: KernelManagerOptions) {
 		this.options = {
@@ -368,6 +384,20 @@ export class ReplKernelManager {
 
 	private async doStart(_startOptions: KernelStartOptions): Promise<void> {
 		if (this.state !== "idle") return;
+
+		// Circuit breaker check: if consecutive boot failures reach threshold within cooldown window
+		const now = Date.now();
+		if (
+			this.consecutiveBootFailures >= MAX_CONSECUTIVE_BOOT_FAILURES &&
+			now - this.lastBootFailureTime < BOOT_CIRCUIT_COOLDOWN_MS
+		) {
+			throw new KernelBootCircuitBrokenError(
+				this.consecutiveBootFailures,
+				this.lastBootFailurePhase,
+				this.lastBootFailureError,
+			);
+		}
+
 		const generation = ++this.startGeneration;
 		this.state = "starting";
 		installSignalHandlersOnce();
@@ -451,7 +481,23 @@ export class ReplKernelManager {
 						"Update apollo-cli-runtime in the kernel to match this agent.",
 				);
 			}
+			// Startup succeeded: reset consecutive boot failures
+			this.consecutiveBootFailures = 0;
+			this.lastBootFailurePhase = "none";
+			this.lastBootFailureError = "";
 		} catch (e) {
+			this.consecutiveBootFailures += 1;
+			this.lastBootFailureTime = Date.now();
+			const errMsg = errorMessage(e);
+			this.lastBootFailureError = errMsg;
+			if (errMsg.includes("ENOENT") || errMsg.includes("spawn")) {
+				this.lastBootFailurePhase = "Process Spawn";
+			} else if (errMsg.includes("before ready") || errMsg.includes("not become ready")) {
+				this.lastBootFailurePhase = "Ready Handshake";
+			} else {
+				this.lastBootFailurePhase = "Startup Protocol";
+			}
+
 			if (this.startStale(generation)) throw e; // never tear down a newer start's kernel
 			const canRetryStartup = (this.state as string) !== "shutdown";
 			// Only the call that performed the cleanup may resurrect to idle; a
@@ -1665,6 +1711,11 @@ export class ReplKernelManager {
 		await prev;
 
 		try {
+			// Manual restart resets the circuit breaker
+			this.consecutiveBootFailures = 0;
+			this.lastBootFailurePhase = "none";
+			this.lastBootFailureError = "";
+
 			const performedCleanup = await this.shutdown();
 			if (!performedCleanup) return;
 			this.state = "idle";
@@ -1771,6 +1822,8 @@ export class ReplKernelManager {
 				verified: r.doneFields.verified ? asStringArray(r.doneFields.verified) : undefined,
 				unverified: r.doneFields.unverified ? asReasonArray(r.doneFields.unverified) : undefined,
 				failed: asReasonArray(r.doneFields.failed),
+				skipped: r.doneFields.skipped ? asReasonArray(r.doneFields.skipped) : undefined,
+				pruned: r.doneFields.pruned ? asReasonArray(r.doneFields.pruned) : undefined,
 				path: cfg.path,
 			};
 		} catch (error) {

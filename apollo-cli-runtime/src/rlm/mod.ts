@@ -13,7 +13,7 @@ import {
 } from "./harness.ts";
 import { mcp } from "./mcp.ts";
 import { _registerMcpHostRequest, McpIntegration, McpToolError, NotEnabled } from "./mcp_base.ts";
-import { emit, is_active, isActive, op, startReplLoop } from "./repl.ts";
+import { emit, getRegisteredSkills, is_active, isActive, op, startReplLoop } from "./repl.ts";
 
 // The MCP bridge gets the unwrapped host result, not the raw reply envelope.
 _registerMcpHostRequest((requestType, payload) => op(requestType, payload));
@@ -234,6 +234,12 @@ export async function list_subagents(): Promise<unknown[]> {
 
 export const listSubagents = list_subagents;
 
+export function list_skills(): Array<{ name: string; path: string; status: "available" | "unavailable"; error?: string }> {
+	return getRegisteredSkills();
+}
+
+export const listSkills = list_skills;
+
 export async function collect(
 	targets?: unknown,
 	optionsOrTimeout?: Record<string, unknown> | number,
@@ -336,6 +342,8 @@ const _rlmNamespaceTarget = Object.assign(
 		findModels,
 		list_subagents,
 		listSubagents,
+		list_skills,
+		listSkills,
 		collect,
 		complete,
 		progress_note,
@@ -419,6 +427,8 @@ if (isMainEntry) {
 		findModels,
 		list_subagents,
 		listSubagents,
+		list_skills,
+		listSkills,
 		collect,
 		complete,
 		progress_note,

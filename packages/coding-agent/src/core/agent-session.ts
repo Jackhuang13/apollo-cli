@@ -8712,6 +8712,14 @@ export class AgentSession {
 				`These could not be restored and must be recreated if needed: ${result.failed.map((f) => f.name).join(", ")}.`,
 			);
 		}
+		if (result.skipped && result.skipped.length > 0) {
+			const items = result.skipped.map((s) => `${s.name} (${s.reason})`).join(", ");
+			lines.push(`These were skipped during snapshot: ${items}.`);
+		}
+		if (result.pruned && result.pruned.length > 0) {
+			const items = result.pruned.map((p) => p.name).join(", ");
+			lines.push(`These were pruned during compaction: ${items}.`);
+		}
 		void this.sendCustomMessage(
 			{
 				customType: IPYTHON_STATE_RESTORED_CUSTOM_TYPE,

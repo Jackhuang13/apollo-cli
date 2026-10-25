@@ -472,6 +472,15 @@ test("skill resolution: only APOLLO_SKILLS_DIR and dev cwd fallback are honored 
 			);
 			assert.equal(legacy.status, "ok", legacy.errorText);
 			assert.equal(legacy.resultText, "'unresolved'");
+
+			// rlm.list_skills() introspection
+			const skillsResult = await runCell(repl, "w4skills", "JSON.stringify(rlm.list_skills())");
+			assert.equal(skillsResult.status, "ok", skillsResult.errorText);
+			const listed = JSON.parse(skillsResult.resultText.slice(1, -1)); // unwraps inspect quotes
+			assert.ok(Array.isArray(listed));
+			const foundSkill = listed.find((s: any) => s.name === "skillw4e");
+			assert.ok(foundSkill, "skillw4e should be listed in rlm.list_skills()");
+			assert.equal(foundSkill.status, "available");
 		} finally {
 			repl.close();
 		}

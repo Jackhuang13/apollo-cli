@@ -129,4 +129,31 @@ describe("ReplKernelManager startup", () => {
 			vi.useRealTimers();
 		}
 	});
+
+	it("breaks the circuit after 3 consecutive boot failures and resets on restart", async () => {
+		const python = fakeRuntime("#!/bin/sh", 'echo "fatal boot crash" >&2', "exit 42");
+		const manager = new ReplKernelManager({ python, cwd: tempDir });
+
+		try {
+			// Failures 1, 2, 3
+			for (let i = 0; i < 3; i++) {
+				await expect(manager.start()).rejects.toThrow(/fatal boot crash/);
+				// A fresh start after failure requires transitioning back to idle
+				(manager as any).state = "idle";
+			}
+
+			// 4th attempt should trip the circuit breaker immediately
+			await expect(manager.start()).rejects.toThrow(
+				/Kernel failed to boot 3 consecutive times \(Phase: Ready Handshake\)/,
+			);
+
+			// Manual restart resets the circuit breaker
+			await manager.restart().catch(() => {});
+			(manager as any).state = "idle";
+			// After restart, next start should attempt boot (hitting the crash error instead of circuit broken error)
+			await expect(manager.start()).rejects.toThrow(/fatal boot crash/);
+		} finally {
+			await manager.kill();
+		}
+	});
 });
