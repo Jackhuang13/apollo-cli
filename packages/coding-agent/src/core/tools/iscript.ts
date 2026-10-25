@@ -375,7 +375,7 @@ export class IScriptKernelProvisioner {
 
 	constructor(
 		private readonly cwd: string,
-		private readonly options?: Omit<IScriptToolOptions, "provisioner">,
+		readonly options?: Omit<IScriptToolOptions, "provisioner">,
 	) {}
 
 	/** The kernel manager, once a startup has completed successfully. */
@@ -545,7 +545,11 @@ export class IScriptKernelProvisioner {
 			try {
 				// Emitted synchronously (before the permit await) so a listener attaching
 				// mid-flight can replay the current stage.
-				this.emitStartupProgress("Starting Python kernel...");
+				// Keep legacy "Python" text only if caller explicitly passed a python runner override for legacy tests.
+				const isLegacyPythonOverride = resolveKernelRuntime(this.options) === "python-legacy";
+				this.emitStartupProgress(
+					isLegacyPythonOverride ? "Starting Python kernel..." : "Starting IScript kernel...",
+				);
 				// Only the process spawn + port resolve contends for OS resources under a
 				// fan-out, and it is bounded by start()'s own timeouts — so the permit
 				// covers only start(). Restore/bootstrap run per-kernel afterwards and are
@@ -563,13 +567,17 @@ export class IScriptKernelProvisioner {
 				// then overwrites live handles (rlm, skills) on top of anything restored.
 				if (snapshotDir) {
 					snapshotExisted = existsSync(snapshotPathIn(snapshotDir));
-					this.emitStartupProgress("Restoring Python state...");
+					this.emitStartupProgress(
+						isLegacyPythonOverride ? "Restoring Python state..." : "Restoring IScript state...",
+					);
 					const restore = await raceWithAbort(m.restoreState(), startupSignal);
 					if (snapshotExisted) {
 						pendingRestore = restore ?? { restored: [], failed: [], path: snapshotPathIn(snapshotDir) };
 					}
 				}
-				this.emitStartupProgress("Preparing Python runtime...");
+				this.emitStartupProgress(
+					isLegacyPythonOverride ? "Preparing Python runtime..." : "Preparing IScript runtime...",
+				);
 				// Built after start so it matches the kernel's actual dialect (the TS
 				// runtime is preferred when resolvable; otherwise the Python fallback).
 				const bootstrapCode = m.buildBootstrapCode();
@@ -578,7 +586,9 @@ export class IScriptKernelProvisioner {
 				});
 				if (bootstrap.status !== "ok") {
 					const details = [bootstrap.stderr, bootstrap.error?.traceback.join("\n")].filter(Boolean).join("\n");
-					throw new Error(`Failed to initialize rlm runtime in the Python kernel:\n${details}`);
+					throw new Error(
+						`Failed to initialize rlm runtime in the ${isLegacyPythonOverride ? "Python" : "IScript"} kernel:\n${details}`,
+					);
 				}
 				if (snapshotExisted) {
 					m.markRestoredNamespaceFresh();
@@ -659,12 +669,14 @@ async function executeWithBusyKernelChoice(
 				throw error;
 			}
 			const action = await chooseBusyKernelAction(ctx, signal);
+			const runtime = resolveKernelRuntime(provisioner.options);
+			const kernelName = runtime === "python-legacy" ? "Python" : "IScript";
 			if (action === "wait") {
-				onWorkingMessage("Waiting for Python kernel...");
+				onWorkingMessage(`Waiting for ${kernelName} kernel...`);
 				continue;
 			}
 			if (action === "kill") {
-				onWorkingMessage("Restarting Python kernel...");
+				onWorkingMessage(`Restarting ${kernelName} kernel...`);
 				await provisioner.kill();
 				kernelRestarted = true;
 				continue;
@@ -685,19 +697,47 @@ export function imageBlocksFromAttachments(attachments: readonly KernelAttachmen
 export const IpythonKernelProvisioner = IScriptKernelProvisioner;
 export type IpythonKernelProvisioner = IScriptKernelProvisioner;
 
+export type KernelRuntimeDialect = "deno" | "node" | "python-legacy";
+
+export function resolveKernelRuntime(
+	options?: Pick<IScriptToolOptions, "python">,
+	env: NodeJS.ProcessEnv = process.env,
+): KernelRuntimeDialect {
+	const configured = options?.python ?? env.APOLLO_KERNEL_DENO;
+	if (typeof configured === "string" && (configured.endsWith("deno") || configured.endsWith("deno.exe"))) {
+		return "deno";
+	}
+	if (
+		typeof options?.python === "string" &&
+		!options.python.endsWith("node") &&
+		!options.python.endsWith("node.exe")
+	) {
+		return "python-legacy";
+	}
+	return "node";
+}
+
 export function createIScriptToolDefinition(
 	cwd: string,
-	options?: IScriptToolOptions & { name?: string; label?: string },
+	options?: IScriptToolOptions & { name?: string; label?: string; env?: NodeJS.ProcessEnv },
 ): ToolDefinition<typeof iscriptSchema, IScriptToolDetails> {
 	const provisioner = options?.provisioner ?? new IScriptKernelProvisioner(cwd, options);
+
+	const runtime = resolveKernelRuntime(options, options?.env);
+	const runtimeLabel = runtime === "deno" ? "Deno" : "Node VM";
 
 	const toolName = options?.name ?? "iscript";
 	return {
 		name: toolName,
-		label: options?.label ?? toolName,
+		label: options?.label ?? (options?.name ? toolName : `iscript (${runtimeLabel})`),
 		description:
-			"Execute TypeScript / JavaScript code in a persistent IScript (Node) REPL. Top-level `await` and `!cmd` shortcuts are supported. Variables, imports, and loaded data persist across calls, and are revived on a best-effort basis when a session is resumed. Run shell commands with `bash('cmd')` / `await bash('cmd')` or `!cmd`. Project imports, tests, scripts, CLIs, and dependency checks should run through the target project's own environment.",
-		promptSnippet: "iscript - persistent TypeScript/JavaScript (Node) REPL for code, state, and bash() orchestration",
+			runtime === "deno"
+				? "Execute TypeScript / JavaScript code in a persistent IScript (Deno) REPL. Top-level `await` and `!cmd` shortcuts are supported. Variables, imports, and loaded data persist across calls, and are revived on a best-effort basis when a session is resumed. Run shell commands with `bash('cmd')` / `await bash('cmd')` or `!cmd`. Project imports, tests, scripts, CLIs, and dependency checks should run through the target project's own environment."
+				: "Execute TypeScript / JavaScript code in a persistent IScript (Node VM) REPL. Top-level `await` and `!cmd` shortcuts are supported. Variables, imports, and loaded data persist across calls, and are revived on a best-effort basis when a session is resumed. Run shell commands with `bash('cmd')` / `await bash('cmd')` or `!cmd`. Project imports, tests, scripts, CLIs, and dependency checks should run through the target project's own environment.",
+		promptSnippet:
+			runtime === "deno"
+				? "iscript - persistent TypeScript/JavaScript (Deno) REPL for code, state, and bash() orchestration"
+				: "iscript - persistent TypeScript/JavaScript (Node VM) REPL for code, state, and bash() orchestration",
 		// The kernel is single-threaded — apollo must not run two iscript calls in parallel within a batch.
 		executionMode: "sequential",
 		parameters: iscriptSchema,

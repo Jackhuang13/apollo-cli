@@ -83,11 +83,19 @@ describe("REPL doctrine gate (AC-18)", () => {
 		expect(prompt).toContain("rlm.spawn({ prompt: 'sub-task', name: 'api-reviewer' })");
 		expect(prompt).not.toContain("Deno");
 		expect(prompt).toContain("node:vm");
-		const tool = createIScriptToolDefinition("/tmp");
+		const tool = createIScriptToolDefinition("/tmp", { env: {} });
 		expect(`${tool.description}\n${tool.promptSnippet}`).not.toContain("Deno");
 		expect(tool.description).toContain("Node");
+		expect(tool.label).toBe("iscript (Node VM)");
 		expect(prompt).toContain("rlm.create_session({ prompt: 'task', name: 'researcher' })");
 		expect(buildSubagentGuidance({ hasAgentMessage: true })).toContain("rlm.collect(targets, { timeout_ms: 0 })");
+	});
+
+	it("createIScriptToolDefinition adjusts label and description when Deno is configured", () => {
+		const tool = createIScriptToolDefinition("/tmp", { env: { APOLLO_KERNEL_DENO: "/usr/bin/deno" } });
+		expect(tool.label).toBe("iscript (Deno)");
+		expect(tool.description).toContain("(Deno)");
+		expect(tool.promptSnippet).toContain("(Deno)");
 	});
 
 	it("buildRlmPrompt omits the REPL doctrine when no REPL tool is active", () => {

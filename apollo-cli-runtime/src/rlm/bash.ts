@@ -1,8 +1,9 @@
+import { Buffer } from "node:buffer";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { closeSync, fsyncSync, openSync, readdirSync, readFileSync, writeSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { spawn, spawnSync } from "node:child_process";
 
 const IS_POSIX = process.platform !== "win32";
 const HEAD_CAP = 512 * 1024;

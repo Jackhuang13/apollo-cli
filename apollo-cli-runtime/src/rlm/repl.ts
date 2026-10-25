@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as moduleBuiltin from "node:module";
@@ -812,6 +813,9 @@ function _knownFailureHint(err: unknown): string | undefined {
 	if (err.name === "TypeError" && /\.output is not a function/.test(err.message)) {
 		return "Hint: an awaited bash() result's output is a string property (result.output); the output() method exists only on a running handle, before awaiting.";
 	}
+	if (err.name === "PermissionDenied" || /Requires .* permission/.test(err.message)) {
+		return "Hint: this IScript kernel runs on Deno with specific permissions; ensure operations are permitted under -A flags or host environment.";
+	}
 	return undefined;
 }
 
@@ -1590,7 +1594,13 @@ function _startParentWatchdog(shutdownFn: () => void): void {
 			}
 		}
 	}, 1000);
-	timer.unref();
+	if (typeof (timer as unknown as { unref?: () => void }).unref === "function") {
+		(timer as unknown as { unref: () => void }).unref();
+	} else if (
+		typeof (globalThis as unknown as { Deno?: { unrefTimer?: (id: number) => void } }).Deno?.unrefTimer === "function"
+	) {
+		(globalThis as unknown as { Deno: { unrefTimer: (id: number) => void } }).Deno.unrefTimer(timer as unknown as number);
+	}
 }
 
 export async function startReplLoop(preloadGlobals?: Record<string, unknown>): Promise<void> {
@@ -1645,15 +1655,21 @@ export async function startReplLoop(preloadGlobals?: Record<string, unknown>): P
 	});
 
 	const denoObj = (globalThis as unknown as { Deno?: { version?: { deno?: string } } }).Deno;
-	const denoVersion = typeof denoObj === "object" && denoObj?.version?.deno ? denoObj.version.deno : process.versions.node;
+	const isDeno = typeof denoObj === "object" && denoObj !== null && typeof denoObj.version?.deno === "string";
+	const denoVersion = isDeno ? denoObj.version?.deno : undefined;
 
-	_sendProto({
+	const readyPayload: Record<string, unknown> = {
 		event: "ready",
 		protocol: PROTOCOL_VERSION,
-		deno: denoVersion,
+		runtime: isDeno ? "deno" : "node",
 		node: process.versions.node,
-		python: denoVersion,
-	});
+	};
+
+	if (denoVersion) {
+		readyPayload.deno = denoVersion;
+	}
+
+	_sendProto(readyPayload);
 
 	const rl = readline.createInterface({
 		input: process.stdin,

@@ -1,0 +1,1 @@
+- Refined IScript kernel environment architecture: distinguished Deno and Node VM runtime environments from the iscript REPL tool, enabled dynamic tool labeling based on active environment, eliminated legacy python fields from ready handshake, and updated kernel startup messaging.

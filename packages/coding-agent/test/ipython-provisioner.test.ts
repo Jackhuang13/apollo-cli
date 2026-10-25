@@ -405,7 +405,7 @@ describe("IpythonKernelProvisioner", () => {
 				signal: undefined,
 			},
 		);
-		expect(setWorkingMessage).toHaveBeenCalledWith("Waiting for Python kernel...");
+		expect(setWorkingMessage).toHaveBeenCalledWith("Waiting for IScript kernel...");
 		expect(setWorkingMessage).toHaveBeenLastCalledWith(undefined);
 	});
 
@@ -436,7 +436,7 @@ describe("IpythonKernelProvisioner", () => {
 		expect(ensure).toHaveBeenCalledTimes(2);
 		expect(kill).toHaveBeenCalledTimes(1);
 		expect(freshManager.execute).toHaveBeenCalledWith("x = 1", expect.objectContaining({ signal: undefined }));
-		expect(setWorkingMessage).toHaveBeenCalledWith("Restarting Python kernel...");
+		expect(setWorkingMessage).toHaveBeenCalledWith("Restarting IScript kernel...");
 		expect(setWorkingMessage).toHaveBeenLastCalledWith(undefined);
 	});
 

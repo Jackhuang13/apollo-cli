@@ -403,7 +403,11 @@ export class ReplKernelManager {
 		let spawnArgs: string[];
 		if (typeof configured === "string" && (configured.endsWith("deno") || configured.endsWith("deno.exe"))) {
 			spawnCmd = configured;
-			spawnArgs = ["run", "-A", "--unstable-kv", resolvedRuntime];
+			spawnArgs = ["run", "-A", "--unstable-kv", "--unstable-node-globals", resolvedRuntime];
+		} else if (typeof this.options.python === "string") {
+			// Explicit interpreter override specified in options (e.g. mock test runners or custom wrapper)
+			spawnCmd = this.options.python;
+			spawnArgs = [resolvedRuntime];
 		} else {
 			spawnCmd = process.execPath;
 			spawnArgs = ["--experimental-strip-types", resolvedRuntime];
@@ -445,7 +449,7 @@ export class ReplKernelManager {
 			if (protocol !== REPL_PROTOCOL_VERSION) {
 				throw new Error(
 					`Kernel runtime speaks protocol ${protocol}, expected ${REPL_PROTOCOL_VERSION}. ` +
-						"Update prime-agent-runtime in the kernel Python (PRIME_AGENT_KERNEL_PYTHON) to match this prime-agent.",
+						"Update apollo-cli-runtime in the kernel to match this agent.",
 				);
 			}
 		} catch (e) {

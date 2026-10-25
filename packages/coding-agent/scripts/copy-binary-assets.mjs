@@ -23,6 +23,7 @@ export const binaryAssets = [
 	"CHANGELOG.md",
 	"LICENSE",
 	"prime-agent-runtime",
+	"apollo-cli-runtime",
 	"skills",
 	"theme",
 	"assets",
@@ -49,6 +50,7 @@ export function copyBinaryAssets(destination) {
 		"CHANGELOG.md": join(packageDir, "CHANGELOG.md"),
 		LICENSE: join(root, "LICENSE"),
 		"prime-agent-runtime": join(root, "prime-agent-runtime"),
+		"apollo-cli-runtime": join(root, "apollo-cli-runtime"),
 		skills: join(packageDir, "skills"),
 		theme: join(packageDir, "src/modes/interactive/theme"),
 		assets: join(packageDir, "src/modes/interactive/assets"),
@@ -81,6 +83,7 @@ export function validateBinaryAssets(directory) {
 	for (const name of [
 		"prime-agent-runtime/pyproject.toml",
 		"prime-agent-runtime/src/rlm/repl.py",
+		"apollo-cli-runtime/src/rlm/mod.ts",
 		"theme/prime.json",
 		"theme/dark.json",
 		"theme/light.json",

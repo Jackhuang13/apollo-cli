@@ -70,6 +70,26 @@ class ReplTestDriver {
 	}
 }
 
+test("repl emits clean ready event with accurate runtime and no fake python fields", async () => {
+	const repl = new ReplTestDriver();
+	try {
+		const ready = await repl.nextEvent();
+		assert.equal(ready.event, "ready");
+		assert.equal(ready.protocol, 3);
+		const expectedRuntime = typeof (globalThis as any).Deno === "object" ? "deno" : "node";
+		assert.equal(ready.runtime, expectedRuntime);
+		assert.equal(typeof ready.node, "string");
+		assert.equal(ready.python, undefined);
+		if (expectedRuntime === "node") {
+			assert.equal(ready.deno, undefined);
+		} else {
+			assert.equal(typeof ready.deno, "string");
+		}
+	} finally {
+		repl.close();
+	}
+});
+
 test("repl executes code and returns done event with stdout", async () => {
 	const repl = new ReplTestDriver();
 	try {
