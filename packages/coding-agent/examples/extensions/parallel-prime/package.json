@@ -1,0 +1,10 @@
+{
+  "name": "rlm-roles",
+  "version": "0.4.3",
+  "description": "Parallel review/research prompt templates, sequential teamwork pipeline, and role cards for Prime Agent native rlm subagents (no third-party delegation system)",
+  "keywords": ["pi-package"],
+  "pi": {
+    "skills": ["./skills"],
+    "prompts": ["./prompts"]
+  }
+}
