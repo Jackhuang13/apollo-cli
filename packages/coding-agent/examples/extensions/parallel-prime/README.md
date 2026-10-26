@@ -29,10 +29,10 @@ apollo-cli package install "$(pwd)/packages/coding-agent/examples/extensions/par
 ```
 
 等價於 `<apollo-cli 倉庫根>/packages/coding-agent/examples/extensions/parallel-prime`
-的絕對路徑。路徑須解析為絕對路徑:相対路徑是相対 config 目錄
-(~/.apollo/agent/ 或 <project>/.apollo/agent/)解析,不是 cwd。
-本地安裝是引用不是複製,源目錄須保持原位;路徑不存在時 SDK 靜默略過(無錯誤)。
-```
+的絕對路徑。相對路徑相對 cwd 解析;SDK 以相對 config 目錄的形式存檔
+(~/.apollo/agent/ 或 <project>/.apollo/agent/),載入時解回絕對路徑。
+安裝是引用不是複製,源目錄須保持原位;路徑不存在時 install 報錯、
+載入時產生 error diagnostic。
 
 ## 使用
 
