@@ -23,7 +23,7 @@ Child 沒有父對話史,brief 必須自含(路徑、目標、驗收)。
     若無任何 qualified finding,只回:No issues found.
     超過半頁的細節寫入 <artifact-dir>/review-<角度>.md,
     訊息只放摘要+路徑。
-    回報方式:await agent_message.send(<摘要>, receiver_role="parent")
+    回報方式:await agent_message.send(<摘要>, { receiver_role: "parent" })
 
 ## Spawn
 
@@ -39,7 +39,7 @@ Artifact 目錄(spawn 前在父 kernel 執行;`art` 以字面值填進 brief 的
     fs.mkdirSync(art, { recursive: true });
     if (!fs.statSync(art).isDirectory()) throw new Error("artifact dir invalid: " + art);
 
-    r = await rlm.spawn("<填滿的 brief>", name="review-<角度>")
+    const r = await rlm.spawn("<填滿的 brief>", "review-<角度>")
 
 一角度一 child;同一 cell 連續 spawn 後結束回合,不 await 完成。
 本機(本地 27B 推論)並發上限 2~3。

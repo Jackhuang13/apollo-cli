@@ -44,7 +44,7 @@ Child 以 fresh context 執行:fresh spawn 的 child 沒有你的對話史,brief
   (預設 gemini-3.8-flash-medium,`<model>` 可覆蓋);失敗/不合約自動回退原生
   rlm architect 並記錄。未帶 = 原生 rlm architect(預設)。
 
-## 2. 啟動(一階段一 child;同一 Python cell 內 spawn 後立即結束回合,不要 await 完成)
+## 2. 啟動(一階段一 child;同一 IScript cell 內 spawn 後立即結束回合,不要 await 完成)
 
 Artifact 目錄(spawn 前先在父 kernel 執行一次;`art` 以字面值填進每份 brief 的
 `<artifact-dir>`——child 拿到字面絕對路徑,child 端零計算):
@@ -68,7 +68,7 @@ Artifact 目錄(spawn 前先在父 kernel 執行一次;`art` 以字面值填進�
     本階段驗收標準:<可核驗、逐項列舉>。
     長材料(超過半頁)寫入 <artifact-dir>/<階段>-<主題>.md,
     訊息只放摘要+路徑。
-    回報方式:await agent_message.send(<摘要>, receiver_role="parent")
+    回報方式:await agent_message.send(<摘要>, { receiver_role: "parent" })
 
 角色專有重點(與本套件同名角色卡一致):
 - researcher / scout:唯讀;findings 附證據(本地:檔案:行號;外部:來源
@@ -83,17 +83,17 @@ Artifact 目錄(spawn 前先在父 kernel 執行一次;`art` 以字面值填進�
 - tester:逐項:打勾(過/不過)+ 證據;總裁決只一行 Acceptance:
   PASS / FAIL;FAIL 時附編號 defect list(現象 + 證據 + 建議修法)。
 
-Python REPL:
+IScript REPL:
 
-    # 研究階段(選用;唯一併行點;≤2;同 cell spawn 後結束回合):
-    a = await rlm.spawn("<brief researcher>", name="teamwork-research")
-    b = await rlm.spawn("<brief scout>", name="teamwork-scout")
-    # 之後每階段各一個 cell:先驗證上一階段產物路徑,填進 brief 再 spawn:
-    # plan:agy 時:architect 階段不 spawn,Leader 跑 agy headless(見 plan:agy 小節)
-    c = await rlm.spawn("<brief architect>", name="teamwork-architect")
-    d = await rlm.spawn("<brief builder>", name="teamwork-builder")
-    e = await rlm.spawn("<brief devops>", name="teamwork-devops")   # 僅需遠端發佈時
-    f = await rlm.spawn("<brief tester>", name="teamwork-tester")
+    // 研究階段(選用;唯一併行點;≤2;同 cell spawn 後結束回合):
+    const a = await rlm.spawn("<brief researcher>", "teamwork-research")
+    const b = await rlm.spawn("<brief scout>", "teamwork-scout")
+    // 之後每階段各一個 cell:先驗證上一階段產物路徑,填進 brief 再 spawn:
+    // plan:agy 時:architect 階段不 spawn,Leader 跑 agy headless(見 plan:agy 小節)
+    const c = await rlm.spawn("<brief architect>", "teamwork-architect")
+    const d = await rlm.spawn("<brief builder>", "teamwork-builder")
+    const e = await rlm.spawn("<brief devops>", "teamwork-devops")   // 僅需遠端發佈時
+    const f = await rlm.spawn("<brief tester>", "teamwork-tester")
 
 ### plan:agy(選用:architect 階段外包給本機 agy)
 
@@ -132,8 +132,8 @@ Python REPL:
 填下一階段 brief 並 spawn,再結束回合。不要阻塞等待 child 完成。
 
 Continue vs fresh spawn(Leader 裁量;completed child 會保留在 registry,
-可用 `await agent_message.send(<訊息>, receiver_role="child",
-receiver_name=<child 名>)` 繼續對話,同 session、保留全部先前上下文、免
+可用 `await agent_message.send(<訊息>, { receiver_role: "child",
+receiver_name: "<child 名>" })` 繼續對話,同 session、保留全部先前上下文、免
 冷啟動):
 - **continue 同一 child**(限階段內 follow-up):
   - 向 child 追問它自己工作的細節(實作理由、依據、邊界);

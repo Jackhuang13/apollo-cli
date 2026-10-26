@@ -23,7 +23,7 @@ description: rlm researcher 角色卡。Use when spawning a research child via r
     - 建議的下一步或決策意涵
     超過半頁的材料寫入 <artifact-dir>/research-<角度>.md,
     訊息只放摘要+路徑。
-    回報方式:await agent_message.send(<摘要>, receiver_role="parent")
+    回報方式:await agent_message.send(<摘要>, { receiver_role: "parent" })
 
 ## Web 搜尋
 
@@ -44,6 +44,6 @@ Artifact 目錄(spawn 前在父 kernel 執行;`art` 以字面值填進 brief 的
     fs.mkdirSync(art, { recursive: true });
     if (!fs.statSync(art).isDirectory()) throw new Error("artifact dir invalid: " + art);
 
-    r = await rlm.spawn("<填滿的 brief>", name="research-<角度>")
+    const r = await rlm.spawn("<填滿的 brief>", "research-<角度>")
 
 同一 cell 連續 spawn 後結束回合,不 await 完成。本機並發上限 2~3。

@@ -23,7 +23,7 @@ description: "rlm architect 角色卡。Use when spawning an architect child via
     - 驗收標準清單:可核驗、逐項列舉(每項可打勾;不寫主觀詞)
     規劃書寫入 <artifact-dir>/plan-<主題>.md。
     訊息只放:摘要 + 路徑 + 驗收標準清單(全文)。
-    回報方式:await agent_message.send(<摘要>, receiver_role="parent")
+    回報方式:await agent_message.send(<摘要>, { receiver_role: "parent" })
 
 ## Spawn
 
@@ -39,6 +39,6 @@ Artifact 目錄(spawn 前在父 kernel 執行;`art` 以字面值填進 brief 的
     fs.mkdirSync(art, { recursive: true });
     if (!fs.statSync(art).isDirectory()) throw new Error("artifact dir invalid: " + art);
 
-    a = await rlm.spawn("<填滿的 brief>", name="teamwork-architect")
+    const a = await rlm.spawn("<填滿的 brief>", "teamwork-architect")
 
 spawn 後結束回合,不 await 完成。本機並發上限 2;architect 恆為單獨。

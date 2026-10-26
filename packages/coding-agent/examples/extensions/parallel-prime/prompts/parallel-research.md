@@ -25,7 +25,7 @@ Research child 以 fresh context 執行:沒有你的對話史,因此每份 brief
 - UI/產品題:使用者流、可及性、設計先例、實作約束
 - 時效性主題:近期動態角度,偏好 2026/2025 來源
 
-## 2. 啟動(每個角度一個 child;同一 Python cell 內 spawn 後立即結束回合,不要 await 完成)
+## 2. 啟動(每個角度一個 child;同一 IScript cell 內 spawn 後立即結束回合,不要 await 完成)
 
 Artifact 目錄(spawn 前先在父 kernel 執行一次;`art` 以字面值填進每份 brief 的
 `<artifact-dir>`——child 拿到字面絕對路徑,child 端零計算):
@@ -40,10 +40,10 @@ Artifact 目錄(spawn 前先在父 kernel 執行一次;`art` 以字面值填進�
     fs.mkdirSync(art, { recursive: true });
     if (!fs.statSync(art).isDirectory()) throw new Error("artifact dir invalid: " + art);
 
-Python REPL:
+IScript REPL:
 
-    a = await rlm.spawn("<brief A>", name="research-<角度A>")
-    b = await rlm.spawn("<brief B>", name="research-<角度B>")
+    const a = await rlm.spawn("<brief A>", "research-<角度A>")
+    const b = await rlm.spawn("<brief B>", "research-<角度B>")
 
 每份 brief 固定骨架(填滿空白後再 spawn):
 
@@ -59,7 +59,7 @@ Python REPL:
     - 建議的下一步或決策意涵
     (涉本地系統時,brief 也要附關鍵拓撲參數:port、上游位址、服務名——child 不知道本機拓撲。)
     超過半頁的材料寫入 <artifact-dir>/research-<角度>.md,訊息只放摘要+路徑。
-    回報方式:await agent_message.send(<摘要>, receiver_role="parent")
+    回報方式:await agent_message.send(<摘要>, { receiver_role: "parent" })
 
 ## 3. 彙總(收齊全部回報後)
 

@@ -13,7 +13,7 @@ Reviewer 以 fresh context 執行:沒有你的對話史,因此每份 brief 必�
 路徑或 diff 範圍,先讀取再分配 brief。若無引數:清理未提交變更
 (`git status` + `git diff`)或最近一次 commit。
 
-## 2. 啟動(2 個固定角度、2 個 child;同一 Python cell 內 spawn 後立即結束回合,不要 await 完成)
+## 2. 啟動(2 個固定角度、2 個 child;同一 IScript cell 內 spawn 後立即結束回合,不要 await 完成)
 
 Artifact 目錄(spawn 前先在父 kernel 執行一次;`art` 以字面值填進每份 brief 的
 `<artifact-dir>`——child 拿到字面絕對路徑,child 端零計算):
@@ -28,10 +28,10 @@ Artifact 目錄(spawn 前先在父 kernel 執行一次;`art` 以字面值填進�
     fs.mkdirSync(art, { recursive: true });
     if (!fs.statSync(art).isDirectory()) throw new Error("artifact dir invalid: " + art);
 
-Python REPL:
+IScript REPL:
 
-    a = await rlm.spawn("<brief deslop>", name="cleanup-deslop")
-    b = await rlm.spawn("<brief verbosity>", name="cleanup-verbosity")
+    const a = await rlm.spawn("<brief deslop>", "cleanup-deslop")
+    const b = await rlm.spawn("<brief verbosity>", "cleanup-verbosity")
 
 每份 brief 公共骨架:
 
@@ -44,7 +44,7 @@ Python REPL:
     結尾必須只寫一行:Merge verdict: BLOCK / OK / OK with notes 之一。
     若無任何 qualified finding,只回:No issues found.
     超過半頁的細節寫入 <artifact-dir>/review-<角度>.md,訊息只放摘要+路徑。
-    回報方式:await agent_message.send(<摘要>, receiver_role="parent")
+    回報方式:await agent_message.send(<摘要>, { receiver_role: "parent" })
 
 角度 1(deslop):找 AI-slop 模式:
 - 重述代碼的註釋、占位文字、stale 理由、debug 殘留

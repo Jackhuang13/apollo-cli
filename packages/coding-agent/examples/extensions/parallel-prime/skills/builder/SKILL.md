@@ -22,7 +22,7 @@ Child 是唯一本地寫角色:唯一寫入點 = <artifact-dir>
     依規劃書完成交付物,交付前對照驗收清單逐項自檢。
     若規劃書有不可行或錯誤:可做最小必要修改(記錄改動),不得改變目標。
     回報:交付物路徑、逐項對照驗收清單的自檢結果、偏差與缺口。
-    回報方式:await agent_message.send(<摘要>, receiver_role="parent")
+    回報方式:await agent_message.send(<摘要>, { receiver_role: "parent" })
 
 ## Spawn
 
@@ -38,7 +38,7 @@ Artifact 目錄(spawn 前在父 kernel 執行;`art` 以字面值填進 brief 的
     fs.mkdirSync(art, { recursive: true });
     if (!fs.statSync(art).isDirectory()) throw new Error("artifact dir invalid: " + art);
 
-    b = await rlm.spawn("<填滿的 brief>", name="teamwork-builder")
+    const b = await rlm.spawn("<填滿的 brief>", "teamwork-builder")
 
 spawn 後結束回合,不 await 完成。實作型 child 永不並行:任一時刻至多
 一個 builder。

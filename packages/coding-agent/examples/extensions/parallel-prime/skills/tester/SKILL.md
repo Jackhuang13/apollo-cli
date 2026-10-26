@@ -23,7 +23,7 @@ description: "rlm tester 角色卡。Use when spawning a tester child via rlm(/t
     FAIL 時附編號 defect list:每項 = 現象 + 證據 + 建議修法。
     驗收報告寫入 <artifact-dir>/accept-<主題>.md,
     訊息只放:裁決行 + 對照表摘要 + 路徑。
-    回報方式:await agent_message.send(<摘要>, receiver_role="parent")
+    回報方式:await agent_message.send(<摘要>, { receiver_role: "parent" })
 
 ## Spawn
 
@@ -39,7 +39,7 @@ Artifact 目錄(spawn 前在父 kernel 執行;`art` 以字面值填進 brief 的
     fs.mkdirSync(art, { recursive: true });
     if (!fs.statSync(art).isDirectory()) throw new Error("artifact dir invalid: " + art);
 
-    t = await rlm.spawn("<填滿的 brief>", name="teamwork-tester")
+    const t = await rlm.spawn("<填滿的 brief>", "teamwork-tester")
 
 spawn 後結束回合,不 await 完成。tester 恆為單獨。
 驗收 FAIL:由 Leader 依 /teamwork 失敗路回規則處置(預設重派 builder

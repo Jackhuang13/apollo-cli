@@ -23,7 +23,7 @@ Child 沒有父對話史,brief 必須自含(要探勘的工作/問題寫清楚)�
     - 風險與未解問題
     超過半頁的材料寫入 <artifact-dir>/scout-<目標>.md,
     訊息只放摘要+路徑。
-    回報方式:await agent_message.send(<摘要>, receiver_role="parent")
+    回報方式:await agent_message.send(<摘要>, { receiver_role: "parent" })
 
 ## Spawn
 
@@ -39,6 +39,6 @@ Artifact 目錄(spawn 前在父 kernel 執行;`art` 以字面值填進 brief 的
     fs.mkdirSync(art, { recursive: true });
     if (!fs.statSync(art).isDirectory()) throw new Error("artifact dir invalid: " + art);
 
-    r = await rlm.spawn("<填滿的 brief>", name="scout-<目標>")
+    const r = await rlm.spawn("<填滿的 brief>", "scout-<目標>")
 
 同一 cell 連續 spawn 後結束回合,不 await 完成。本機並發上限 2~3。
