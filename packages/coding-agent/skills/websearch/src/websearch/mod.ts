@@ -31,10 +31,10 @@ function _getMcp(): {
 	return g.mcp;
 }
 
-export async function search(query: string, options: SearchOptions = {}): Promise<unknown> {
+export async function web_search(query: string, options: SearchOptions = {}): Promise<unknown> {
 	const q = String(query ?? "").trim();
 	if (!q) {
-		throw new WebSearchError("search(query) requires a non-empty query string.");
+		throw new WebSearchError("web_search(query) requires a non-empty query string.");
 	}
 	const numResults = options.num_results ?? options.numResults ?? 8;
 	const searchType = options.type ?? "auto";
@@ -72,11 +72,14 @@ export async function code_context(query: string, options: CodeContextOptions = 
 
 export const codeContext = code_context;
 
-export const websearch = {
-	search,
+export const webSearch = web_search;
+
+export const websearch = Object.assign(web_search, {
+	web_search,
+	webSearch,
 	code_context,
 	codeContext,
 	WebSearchError,
-};
+});
 
 export default websearch;

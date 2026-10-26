@@ -722,6 +722,15 @@ function _checkIncrementalSyntaxErrors(code: string): { message: string; offset:
 	return null;
 }
 
+function _namedExportCheck(modRef: string, specifier: string, namedSpecs: Array<{ imported: { name: string } }>): string {
+	return namedSpecs
+		.map(
+			(s) =>
+				`if (!(${JSON.stringify(s.imported.name)} in ${modRef})) throw new Error("Module " + ${specifier} + " does not export " + ${JSON.stringify(s.imported.name)} + ". Available named exports: " + Object.keys(${modRef}).filter((k) => k !== "__esModule").join(", "));`,
+		)
+		.join(" ");
+}
+
 function _transformTopLevelImports(code: string): string {
 	let parsed: any;
 	try {
@@ -783,6 +792,7 @@ function _transformTopLevelImports(code: string): string {
 	replacements.sort((a, b) => b.start - a.start);
 
 	let out = code;
+	let namedModCount = 0;
 	for (const rep of replacements) {
 		if (rep.type === "dynamic") {
 			const imp = rep.node;
@@ -820,6 +830,8 @@ function _transformTopLevelImports(code: string): string {
 					recordUserGlobal(defName);
 					replacementStr = `const __mod_${defName} = await globalThis.__apollo_import__(${specifier}); const ${defName} = (globalThis.${defName} = __mod_${defName}.default ?? __mod_${defName});`;
 				} else if (!defaultSpec && namedSpecs.length > 0) {
+					namedModCount += 1;
+					const modRef = `__mod_named_${namedModCount}`;
 					const inner = namedSpecs
 						.map((s: any) => {
 							recordUserGlobal(s.local.name);
@@ -827,7 +839,7 @@ function _transformTopLevelImports(code: string): string {
 						})
 						.join(", ");
 					const assignGlobals = namedSpecs.map((s: any) => `globalThis.${s.local.name} = ${s.local.name};`).join(" ");
-					replacementStr = `const { ${inner} } = await globalThis.__apollo_import__(${specifier}); ${assignGlobals}`;
+					replacementStr = `const ${modRef} = await globalThis.__apollo_import__(${specifier}); ${_namedExportCheck(modRef, specifier, namedSpecs)} const { ${inner} } = ${modRef}; ${assignGlobals}`;
 				} else if (defaultSpec && namedSpecs.length > 0) {
 					const defName = defaultSpec.local.name;
 					recordUserGlobal(defName);
@@ -841,7 +853,7 @@ function _transformTopLevelImports(code: string): string {
 						`globalThis.${defName} = ${defName};`,
 						...namedSpecs.map((s: any) => `globalThis.${s.local.name} = ${s.local.name};`),
 					].join(" ");
-					replacementStr = `const __mod_${defName} = await globalThis.__apollo_import__(${specifier}); const ${defName} = __mod_${defName}.default ?? __mod_${defName}; const { ${inner} } = __mod_${defName}; ${assignGlobals}`;
+					replacementStr = `const __mod_${defName} = await globalThis.__apollo_import__(${specifier}); ${_namedExportCheck(`__mod_${defName}`, specifier, namedSpecs)} const ${defName} = __mod_${defName}.default ?? __mod_${defName}; const { ${inner} } = __mod_${defName}; ${assignGlobals}`;
 				}
 			}
 			out = out.slice(0, decl.start) + replacementStr + out.slice(decl.end);

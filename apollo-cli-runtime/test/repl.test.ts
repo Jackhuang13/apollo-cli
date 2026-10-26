@@ -313,6 +313,18 @@ test("import rewriter: static import of node: builtin resolves (regression)", as
 	}
 });
 
+test("import rewriter: missing named export fails with a clear error (regression: missing-export)", async () => {
+	const repl = new ReplTestDriver();
+	try {
+		await repl.nextEvent();
+		const res = await runCell(repl, "miss", "import { notExported } from \"node:path\"; notExported");
+		assert.equal(res.status, "error", res.errorText || res.resultText);
+		assert.match(res.errorText, /does not export notExported[\s\S]*join/);
+	} finally {
+		repl.close();
+	}
+});
+
 test("import rewriter: dynamic-import text inside strings survives write to file (regression: A2)", async () => {
 	const repl = new ReplTestDriver();
 	try {

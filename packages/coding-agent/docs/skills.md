@@ -50,35 +50,38 @@ Prime Agent ships with built-in skills that load by default:
 
 - `prime-intellect` - Prime Intellect products and workflows via the prime CLI: verifiers environments and the Environments Hub, evaluations (local and hosted), Hosted Training and prime-rl, sandboxes, tunnels, Prime Inference, GPU compute, and storage. Reference docs for each area load on demand from the skill's `references/` directory.
 - `skill-creator` - teaches the agent to create new skills: markdown skill layout, frontmatter rules, placement and precedence, and the full Python-backed skill contract (package layout, `run()` convention, optional CLI, kernel venv behavior) with a working template in `references/python-skills.md`.
-- `websearch` - a Python-backed Google search skill using the [Serper](https://serper.dev) API.
+- `websearch` - a TypeScript-backed web search and code-context skill via the [Exa](https://exa.ai) MCP integration.
 
 Built-in skills behave like any other skill but have the lowest precedence: a user, project, package, or `--skill` skill with the same name overrides the built-in one.
 
 ### websearch
 
-Setup: get a free API key at [serper.dev](https://serper.dev), then run `/login`,
-switch to **MCP Connections** using the displayed tab shortcuts, and choose
-**Serper (web search)** to paste it. The key is stored alongside your other
-credentials (in `auth.json`) and read by the skill on each call — no environment
-variables required, and it works even if you add the key mid-session.
+Setup: get an API key at [exa.ai](https://exa.ai) and declare an `exa` MCP
+server under `mcpServers` in `settings.json` so the connection is available to the kernel:
 
-Optional overrides (environment variables):
-
-```bash
-export PRIME_AGENT_WEBSEARCH_TIMEOUT=45
-export PRIME_AGENT_WEBSEARCH_NUM_RESULTS=5
+```json
+{
+  "mcpServers": {
+    "exa": {
+      "type": "http",
+      "url": "https://mcp.exa.ai/mcp",
+      "headers": { "x-api-key": "<exa-api-key>" }
+    }
+  }
+}
 ```
 
-A `SERPER_API_KEY` in the environment, if set, takes precedence over the stored key.
+Once loaded, the model can call it directly in the TypeScript kernel — the
+default export is callable, and the named exports are auto-promoted to globals:
 
-Once loaded, the model can call it directly in the Python kernel by import name:
-
-```python
-print(await websearch("latest Prime Agent release"))
+```ts
+print(await websearch("latest Prime Agent release"));
+import { web_search, code_context } from "websearch";
+const results = await web_search("Deno 2.x workspaces", { num_results: 5 });
 ```
 
-Until a key is configured, web search returns a clear message telling the agent
-to walk you through `/login`.
+Until an `exa` server is declared, calls fail with a clear
+"server not declared in user settings" error.
 
 Disable only the built-in `websearch` skill in settings:
 

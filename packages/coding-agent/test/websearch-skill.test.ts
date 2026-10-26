@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { code_context, search } from "../skills/websearch/src/websearch/mod.js";
+import { code_context, web_search } from "../skills/websearch/src/websearch/mod.js";
 
 describe("websearch uses server-first mcp.call_tool (AC-36)", () => {
 	let callTool: ReturnType<typeof vi.fn>;
@@ -18,8 +18,8 @@ describe("websearch uses server-first mcp.call_tool (AC-36)", () => {
 		}
 	});
 
-	it("search() calls call_tool(server, tool, args) with the exa server first", async () => {
-		await search("quantum error correction", { num_results: 3 });
+	it("web_search() calls call_tool(server, tool, args) with the exa server first", async () => {
+		await web_search("quantum error correction", { num_results: 3 });
 		expect(callTool).toHaveBeenCalledTimes(1);
 		expect(callTool).toHaveBeenCalledWith(
 			"exa",

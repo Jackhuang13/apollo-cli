@@ -1,0 +1,2 @@
+- Renamed the websearch skill's `search` export to `web_search` (plus a `webSearch` alias) to resolve the bare-global collision with the refine/harness `search`; the `websearch` default export is now directly callable.
+- Kernel import rewriter: static imports of a missing named export now fail with a clear error listing the module's available exports instead of silently binding `undefined` (and clobbering same-named globals).

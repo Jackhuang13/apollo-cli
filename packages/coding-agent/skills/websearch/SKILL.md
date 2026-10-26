@@ -1,6 +1,6 @@
 ---
 name: websearch
-description: Search the web and fetch technical documentation or code examples via Exa MCP (`import { search, code_context } from "websearch"` or `mcp.call_tool("exa", "web_search_exa", ...)`).
+description: Search the web and fetch technical documentation or code examples via Exa MCP (`import { web_search, code_context } from "websearch"` or `mcp.call_tool("exa", "web_search_exa", ...)`).
 ---
 
 # `websearch` — Web & Code Context Search
@@ -10,13 +10,15 @@ Search the live web and retrieve library/SDK code context via the Exa MCP integr
 ## Import
 
 ```ts
-import { search, code_context } from "websearch";
+import { web_search, code_context } from "websearch";
 ```
+
+The default export is also directly callable from the kernel global: `await websearch("query")`.
 
 ## Web Search
 
 ```ts
-const results = await search("Deno 2.x workspace configuration", {
+const results = await web_search("Deno 2.x workspace configuration", {
   num_results: 5,
   type: "auto",
   livecrawl: "fallback",
