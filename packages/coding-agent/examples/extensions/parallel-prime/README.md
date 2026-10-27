@@ -1,8 +1,7 @@
 # rlm-roles
 
-Prime Agent 原生 rlm 子代理的並行 review/research 模板、順序 teamwork 流水線與角色卡。
-**不帶任何第三方委派系統**——所有委派走 prime-agent 內建 `rlm.spawn`
-(child = 獨立 fresh-context 的 prime-agent session)。
+Prime Agent 原生 rlm 子代理的並行 review/research 模板、順序 teamwork 流水線與角色卡,
+委派全部走內建 `rlm.spawn`(child = 獨立 fresh-context 的 prime-agent session)。
 
 ## 內容
 
@@ -52,7 +51,7 @@ apollo-cli package install "$(pwd)/packages/coding-agent/examples/extensions/par
 apollo-cli package remove "$(pwd)/packages/coding-agent/examples/extensions/parallel-prime"
 ```
 
-## 主機注意(MIS-JACK)
+## 環境注意(本部署)
 
 預設模型為本地 Llamacpp Qwen3.6-27b:每個 child 都是同機的一個完整推論
 session。模板預設 2 child、上限 3(實測並行加速 ~1.65x);實作型 child
