@@ -27,7 +27,8 @@ description: rlm researcher 角色卡。Use when spawning a research child via r
 
 ## Web 搜尋
 
-本機 websearch(Serper)未設定;改用 felo skill。
+網路搜尋用環境內可用的搜尋工具(不指定特定工具);用戶指定
+provider 時以之為準。最終回報必明載所用 provider。
 時效性主題偏好 2026/2025 來源。
 
 ## Spawn

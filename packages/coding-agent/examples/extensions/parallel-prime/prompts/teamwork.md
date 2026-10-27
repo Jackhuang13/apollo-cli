@@ -15,8 +15,9 @@ Child 以 fresh context 執行:fresh spawn 的 child 沒有你的對話史,brief
 固定鏈:Researcher(+Scout 選用)→ Architect → Builder → [DevOps] → Tester。
 
 1. 研究(選用;唯一併行點;≤2 child;全唯讀):
-   - 需線上素材:spawn researcher(本機 websearch/Serper 未設定,用
-     felo skill;時效性主題偏好 2026/2025 來源)。
+   - 需線上素材:spawn researcher(網路搜尋用環境內可用的搜尋工具;
+     用戶指定 provider 時以之為準並記入 brief;時效性主題偏好
+     2026/2025 來源)。
    - 需本機素材:可另 spawn scout 併行(讀 repo;brief 必附 repo 絕對路徑)。
    - 不需研究:跳過(invocation 明寫 skip-research,或 Leader 判定)。
 2. Architect(單獨、唯讀):收全部研究產物路徑,產出完整規劃書;spawn architect child。

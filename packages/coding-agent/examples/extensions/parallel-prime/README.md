@@ -54,7 +54,7 @@ apollo-cli package remove "$(pwd)/packages/coding-agent/examples/extensions/para
 
 並行角度型模板(review/research)總數至多 3 個 child;任一時刻至多 2 個
 child 並行(teamwork 無總數上限,但同樣每次至多 2 併行);實作型 child
-(worker)永不並行。Web 搜尋用 felo(Serper 未設定)。
+(worker)永不並行。
 
 ## 授權
 
