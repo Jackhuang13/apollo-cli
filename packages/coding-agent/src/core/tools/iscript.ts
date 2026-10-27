@@ -98,8 +98,15 @@ export const parseUnavailablePythonSkills = parseUnavailableIScriptSkills;
 
 export function buildIScriptBootstrapCode(pythonSkills: readonly PythonSkillRuntimeInfo[] = []): string {
 	const baseCode = [RLM_BOOTSTRAP_HEADER_CODE, RLM_BOOTSTRAP_RUNTIME_CODE].join("\n\n");
-	const importNames = [...new Set(pythonSkills.map((skill) => skill.importName))];
-	if (importNames.length === 0) {
+	// First-wins by importName: the host already deduped skills by precedence.
+	const seen = new Set<string>();
+	const skills: Array<{ name: string; importName: string; packagePath: string }> = [];
+	for (const skill of pythonSkills) {
+		if (seen.has(skill.importName)) continue;
+		seen.add(skill.importName);
+		skills.push({ name: skill.name, importName: skill.importName, packagePath: skill.packagePath });
+	}
+	if (skills.length === 0) {
 		return baseCode;
 	}
 
@@ -108,15 +115,20 @@ ${baseCode}
 
 await (async () => {
     const importErrors = {};
-    for (const skillName of ${JSON.stringify(importNames)}) {
+    for (const skill of ${JSON.stringify(skills)}) {
         try {
+            // Exact host-discovered path first, so bare-specifier imports in
+            // later cells resolve even outside the skill roots.
+            if (typeof globalThis.__apollo_register_skill__ === "function") {
+                globalThis.__apollo_register_skill__(skill.name, skill.importName, skill.packagePath);
+            }
             if (typeof globalThis.__apollo_import__ === "function") {
-                const mod = await globalThis.__apollo_import__(skillName);
+                const mod = await globalThis.__apollo_import__(skill.importName);
                 // ESM skills arrive as a module namespace; unwrap the default
                 // export so the bare global is callable, and merge any
                 // non-colliding named exports.
                 const fn = (mod && mod.default !== undefined) ? mod.default : mod;
-                globalThis[skillName] = fn;
+                globalThis[skill.importName] = fn;
                 if (mod && typeof mod === "object") {
                     for (const [key, value] of Object.entries(mod)) {
                         if (key === "default" || key === "__esModule") continue;
@@ -126,10 +138,15 @@ await (async () => {
             }
         } catch (err) {
             const errText = String(err?.message || err);
-            importErrors[skillName] = errText;
-            globalThis[skillName] = async () => {
-                throw new Error(\`Skill \${skillName} is unavailable in this kernel: \${errText}\`);
+            importErrors[skill.importName] = errText;
+            if (typeof globalThis.__apollo_mark_skill_unavailable__ === "function") {
+                globalThis.__apollo_mark_skill_unavailable__(skill.name, skill.importName, errText);
+            }
+            const placeholder = async () => {
+                throw new Error(\`Skill \${skill.importName} is unavailable in this kernel: \${errText}\`);
             };
+            Object.defineProperty(placeholder, "__apollo_skill_unavailable__", { value: errText });
+            globalThis[skill.importName] = placeholder;
         }
     }
     if (Object.keys(importErrors).length > 0) {

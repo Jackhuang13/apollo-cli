@@ -361,6 +361,8 @@ const _RESERVED_NAMES = new Set<string>([
 	"write",
 	"__apollo_require__",
 	"__apollo_import__",
+	"__apollo_register_skill__",
+	"__apollo_mark_skill_unavailable__",
 ]);
 
 export function recordUserGlobal(name: string): void {
@@ -1769,6 +1771,29 @@ export function getRegisteredSkills(): RegisteredSkillInfo[] {
 	return [..._registeredSkills];
 }
 
+/** First existing entrypoint under a skill directory (src/<name>/mod.ts variants), or undefined. */
+function _resolveSkillEntrypoint(skillDir: string, skillName: string, importName?: string): string | undefined {
+	const names = importName && importName !== skillName ? [importName, skillName] : [skillName];
+	for (const name of names) {
+		const entry = path.join(skillDir, "src", name, "mod.ts");
+		if (fs.existsSync(entry)) return entry;
+	}
+	const bare = path.join(skillDir, "src", "mod.ts");
+	return fs.existsSync(bare) ? bare : undefined;
+}
+
+/** Update or insert a registered skill by name. */
+function _upsertRegisteredSkill(skill: RegisteredSkillInfo): void {
+	const existing = _registeredSkills.find((entry) => entry.name === skill.name);
+	if (existing) {
+		existing.path = skill.path;
+		existing.status = skill.status;
+		existing.error = skill.error;
+	} else {
+		_registeredSkills.push(skill);
+	}
+}
+
 function _setupSkillModuleResolver(): void {
 	const req = moduleBuiltin.createRequire(path.join(process.cwd(), "__repl__.js"));
 	(globalThis as Record<string, unknown>).__apollo_require__ = req;
@@ -1782,47 +1807,71 @@ function _setupSkillModuleResolver(): void {
 			if (part.trim()) candidateSkillRoots.push(part.trim());
 		}
 	}
+	// Dev fallback: sessions started from a repository checkout.
 	candidateSkillRoots.push(path.resolve(process.cwd(), "packages/coding-agent/skills"));
 
 	_registeredSkills.length = 0;
 
-	for (const root of candidateSkillRoots) {
-		try {
-			if (!fs.existsSync(root)) continue;
-			for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
-				if (!entry.isDirectory()) continue;
-				const skillDir = path.join(root, entry.name);
-				const underscored = entry.name.replace(/-/g, "_");
-				const candidates = [
-					path.join(skillDir, "src", underscored, "mod.ts"),
-					path.join(skillDir, "src", entry.name, "mod.ts"),
-					path.join(skillDir, "src", "mod.ts"),
-				];
-				let foundPath: string | undefined;
-				for (const c of candidates) {
-					if (fs.existsSync(c)) {
-						foundPath = c;
-						skillImportMap.set(entry.name, c);
-						skillImportMap.set(underscored, c);
-						skillImportMap.set(`@apollo/skill-${entry.name}`, c);
-						break;
+	// First-wins: an earlier (higher-precedence) root is never shadowed by a
+	// later one; explicit host registrations can still override (below).
+	const scanSkillRoots = (): void => {
+		for (const root of candidateSkillRoots) {
+			try {
+				if (!fs.existsSync(root)) continue;
+				for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+					if (!entry.isDirectory()) continue;
+					const foundPath = _resolveSkillEntrypoint(path.join(root, entry.name), entry.name);
+					if (!foundPath) continue;
+					const keys = [entry.name, entry.name.replace(/-/g, "_"), `@apollo/skill-${entry.name}`];
+					for (const key of keys) {
+						if (!skillImportMap.has(key)) skillImportMap.set(key, foundPath);
+					}
+					if (!_registeredSkills.some((registered) => registered.name === entry.name)) {
+						_registeredSkills.push({ name: entry.name, path: foundPath, status: "available" });
 					}
 				}
-				if (foundPath) {
-					_registeredSkills.push({
-						name: entry.name,
-						path: foundPath,
-						status: "available",
-					});
-				}
+			} catch {
+				// Ignore unreadable skill directories
 			}
-		} catch {
-			// Ignore unreadable skill directories
 		}
-	}
+	};
+	scanSkillRoots();
+
+	// Host-authorized registration: an exact package path wins over directory scans.
+	(globalThis as Record<string, unknown>).__apollo_register_skill__ = (
+		skillName: string,
+		importName: string,
+		packagePath: string,
+	): boolean => {
+		const foundPath = _resolveSkillEntrypoint(packagePath, skillName, importName);
+		if (!foundPath) return false;
+		for (const key of [skillName, importName, `@apollo/skill-${skillName}`]) {
+			skillImportMap.set(key, foundPath);
+		}
+		_upsertRegisteredSkill({ name: skillName, path: foundPath, status: "available" });
+		return true;
+	};
+	(globalThis as Record<string, unknown>).__apollo_mark_skill_unavailable__ = (
+		skillName: string,
+		_importName: string,
+		error: string,
+	): void => {
+		const existing = _registeredSkills.find((entry) => entry.name === skillName);
+		_upsertRegisteredSkill({
+			name: skillName,
+			path: existing?.path ?? "",
+			status: "unavailable",
+			error,
+		});
+	};
 
 	(globalThis as Record<string, unknown>).__apollo_import__ = async (specifier: string): Promise<unknown> => {
-		const mapped = skillImportMap.get(specifier);
+		let mapped = skillImportMap.get(specifier);
+		if (!mapped) {
+			// Skills may appear mid-session (e.g. scaffold_skill): rescan before failing.
+			scanSkillRoots();
+			mapped = skillImportMap.get(specifier);
+		}
 		if (mapped) {
 			return req(mapped);
 		}

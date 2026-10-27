@@ -18,7 +18,7 @@ import {
 import path, { dirname, join } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { v4 as uuid } from "uuid";
-import { getAgentDir } from "../../config.js";
+import { getAgentDir, getBundledSkillsDir } from "../../config.js";
 import { spawnHidden } from "../../utils/child-process.js";
 import { reapKernelOrphanProcesses, recordOrphanProcessState } from "../orphan-process-journal.js";
 import { buildIScriptBootstrapCode } from "../tools/iscript.js";
@@ -449,11 +449,21 @@ export class ReplKernelManager {
 			APOLLO_KERNEL_OWNER_PID: String(process.pid),
 			PRIME_AGENT_KERNEL_OWNER_PID: String(process.pid),
 		};
-		// Skill roots are owned by the host: default to the agent dir's skills
-		// folder unless the user (env) or the caller (options.env) chose one.
-		if (!childEnv.APOLLO_SKILLS_DIR) {
-			childEnv.APOLLO_SKILLS_DIR = join(getAgentDir(), "skills");
+		// Skill roots are owned by the host, in precedence order (kernel
+		// resolution is first-wins): explicit APOLLO_SKILLS_DIR segments, the
+		// user skills dir, the roots of host-discovered skills, and the bundled
+		// core skills dir so built-in skills survive any session cwd.
+		const skillRoots: string[] = [];
+		for (const root of [
+			...(childEnv.APOLLO_SKILLS_DIR ?? "").split(path.delimiter),
+			join(getAgentDir(), "skills"),
+			...(this.options.pythonSkills ?? []).map((skill) => dirname(skill.packagePath)),
+			getBundledSkillsDir(),
+		]) {
+			const trimmed = root.trim();
+			if (trimmed && !skillRoots.includes(trimmed)) skillRoots.push(trimmed);
 		}
+		childEnv.APOLLO_SKILLS_DIR = skillRoots.join(path.delimiter);
 		const child = spawnHidden(spawnCmd, spawnArgs, {
 			cwd: this.options.cwd,
 			// bash journals its process groups under this pid so the host can

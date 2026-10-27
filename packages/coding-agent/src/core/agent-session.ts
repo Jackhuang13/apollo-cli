@@ -8746,7 +8746,7 @@ export class AgentSession {
 		}
 		lines.push(
 			"",
-			"Their shell command forms fail the same way. Fix the import error first (for example install the missing dependency with `uv pip install <pkg>` or reinstall the skill into the kernel venv), or use another approach.",
+			"Their shell command forms fail the same way. A failed import usually means the skill entrypoint (its src/mod.ts) is missing, broken, or outside the APOLLO_SKILLS_DIR search chain: check the skill directory and the search chain first, or use another approach.",
 		);
 		void this.sendCustomMessage(
 			{

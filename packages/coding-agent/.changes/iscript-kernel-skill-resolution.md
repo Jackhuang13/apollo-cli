@@ -1,0 +1,1 @@
+- Fixed IScript kernel skill resolution from non-repo working directories: the host now passes an ordered APOLLO_SKILLS_DIR chain that includes the bundled core skills dir, the bootstrap registers each skill by its exact package path, and failed skill imports are reported per skill instead of silently injecting throwing placeholders.

@@ -19,7 +19,7 @@ vi.mock("../../src/core/kernel/bootstrap.js", async (importOriginal) => {
 	};
 });
 
-import { buildIScriptBootstrapCode } from "../../src/core/tools/iscript.js";
+import { buildIScriptBootstrapCode, parseUnavailablePythonSkills } from "../../src/core/tools/iscript.js";
 import { resolveKernelBashShell } from "../../src/utils/shell.js";
 
 type Frame = Record<string, unknown>;
@@ -470,24 +470,51 @@ describe("interpreter bootstrap dialects (AC-14, AC-15, AC-20, AC-21)", () => {
 		}
 	});
 
-	it("TS kernel: host injects APOLLO_SKILLS_DIR default from the agent dir (issue: skill path resolution)", async () => {
-		const tempDir = mkdtempSync(join(tmpdir(), "apollo-skilldir-"));
-		const skillSrc = join(tempDir, "skills", "w5skill", "src");
-		mkdirSync(skillSrc, { recursive: true });
-		writeFileSync(join(skillSrc, "mod.ts"), "export const v = 7;\n");
-		vi.stubEnv("APOLLO_AGENT_DIR", tempDir);
+	it("TS kernel: host skill-root chain loads core + user skills from a non-repo cwd (skill path resolution)", async () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "apollo-skillagent-"));
+		const workCwd = mkdtempSync(join(tmpdir(), "apollo-skillcwd-"));
+		// A user skill that shadows a bundled core skill name: the user one must win (first-wins).
+		const userSkillSrc = join(agentDir, "skills", "compact", "src");
+		mkdirSync(userSkillSrc, { recursive: true });
+		writeFileSync(join(userSkillSrc, "mod.ts"), "export default async () => 'user-compact';\n");
+		vi.stubEnv("APOLLO_AGENT_DIR", agentDir);
 		vi.stubEnv("APOLLO_SKILLS_DIR", "");
 		let manager: ReplKernelManager | undefined;
 		try {
-			manager = new ReplKernelManager({ cwd: tempDir });
+			manager = new ReplKernelManager({
+				cwd: workCwd,
+				pythonSkills: [
+					{
+						name: "edit",
+						importName: "edit",
+						packagePath: join(skillsDir, "edit"),
+						pyprojectPath: join(skillsDir, "edit", "pyproject.toml"),
+					},
+					{
+						name: "compact",
+						importName: "compact",
+						packagePath: join(agentDir, "skills", "compact"),
+						pyprojectPath: join(agentDir, "skills", "compact", "pyproject.toml"),
+					},
+				],
+			});
 			await manager.start();
-			const res = await manager.execute("(await __apollo_import__('w5skill')).v");
-			expect(res.status).toBe("ok");
-			expect(res.result).toBe("7");
+			// Re-run the bootstrap: all imports must succeed, so no unavailable report is emitted.
+			const boot = await manager.execute(manager.buildBootstrapCode());
+			expect(boot.status).toBe("ok");
+			expect(parseUnavailablePythonSkills(boot.stdout)).toBeUndefined();
+			const core = await manager.execute('typeof globalThis.edit === "function"');
+			expect(core.result).toBe("true");
+			const named = await manager.execute(
+				'import { EditError } from "edit"; new EditError("probe").constructor.name === "EditError"',
+			);
+			expect(named.result).toBe("true");
+			const user = await manager.execute('await globalThis.compact() === "user-compact"');
+			expect(user.result).toBe("true");
 		} finally {
 			vi.unstubAllEnvs();
 			manager?.disposeSync();
-			rmSync(tempDir, { recursive: true, force: true });
+			for (const dir of [agentDir, workCwd]) rmSync(dir, { recursive: true, force: true });
 		}
 	});
 

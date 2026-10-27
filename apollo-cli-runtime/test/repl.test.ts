@@ -446,53 +446,54 @@ test("repl intercepts syntax errors early when import is present and formats as 
 	}
 });
 
-test("skill resolution: only APOLLO_SKILLS_DIR and dev cwd fallback are honored (legacy roots removed)", async () => {
+test("skill resolution: first-wins roots, dynamic rescan, host registration (skill path resolution)", async () => {
 	const tmp = mkdtempSync(path.join(os.tmpdir(), "skillw4-"));
-	const mkSkill = (root: string, name: string) => {
+	const mkSkill = (root: string, name: string, value = 42) => {
 		const d = path.join(root, name, "src");
 		mkdirSync(d, { recursive: true });
-		writeFileSync(path.join(d, "mod.ts"), "export const v = 42;\n");
+		writeFileSync(path.join(d, "mod.ts"), `export const v = ${value};\n`);
 	};
 	try {
-		const fakeHome = path.join(tmp, "home");
-		mkSkill(path.join(fakeHome, ".apollo", "skills"), "skillw4h");
-		mkSkill(path.join(fakeHome, ".prime", "skills"), "skillw4p");
 		const envRoot = path.join(tmp, "envroot");
 		mkSkill(envRoot, "skillw4e");
+		const coreRoot = path.join(tmp, "coreroot");
+		mkSkill(coreRoot, "skillw4c", 43);
+		mkSkill(coreRoot, "skillw4e", 43); // same name as envRoot: first-wins must keep 42
 		const legacyRoot = path.join(tmp, "legacyroot");
 		mkSkill(legacyRoot, "skillw4l");
 		const repl = new ReplTestDriver({
-			HOME: fakeHome,
-			USERPROFILE: fakeHome,
-			APOLLO_SKILLS_DIR: envRoot,
+			APOLLO_SKILLS_DIR: [envRoot, coreRoot].join(path.delimiter),
 			PRIME_AGENT_SKILLS_DIR: legacyRoot,
 		});
 		try {
 			await repl.nextEvent();
-			const ok = await runCell(repl, "w4ok", "(await __apollo_import__('skillw4e')).v");
-			assert.equal(ok.status, "ok", ok.errorText || ok.resultText);
-			assert.equal(ok.resultText, "42");
-			const gone = await runCell(
-				repl, "w4gone",
-				"await (async () => { try { await __apollo_import__('skillw4h'); await __apollo_import__('skillw4p'); return 'resolved'; } catch { return 'unresolved'; } })()",
-			);
-			assert.equal(gone.status, "ok", gone.errorText);
-			assert.equal(gone.resultText, "'unresolved'");
-			const legacy = await runCell(
-				repl, "w4legacy",
-				"await (async () => { try { await __apollo_import__('skillw4l'); return 'resolved'; } catch { return 'unresolved'; } })()",
-			);
-			assert.equal(legacy.status, "ok", legacy.errorText);
-			assert.equal(legacy.resultText, "'unresolved'");
-
-			// rlm.list_skills() introspection
-			const skillsResult = await runCell(repl, "w4skills", "JSON.stringify(rlm.list_skills())");
-			assert.equal(skillsResult.status, "ok", skillsResult.errorText);
-			const listed = JSON.parse(skillsResult.resultText.slice(1, -1)); // unwraps inspect quotes
-			assert.ok(Array.isArray(listed));
-			const foundSkill = listed.find((s: any) => s.name === "skillw4e");
-			assert.ok(foundSkill, "skillw4e should be listed in rlm.list_skills()");
-			assert.equal(foundSkill.status, "available");
+			const won = await runCell(repl, "w4won", "(await __apollo_import__('skillw4e')).v");
+			assert.equal(won.status, "ok", won.errorText || won.resultText);
+			assert.equal(won.resultText, "42");
+			const second = await runCell(repl, "w4c", "(await __apollo_import__('skillw4c')).v");
+			assert.equal(second.status, "ok", second.errorText || second.resultText);
+			assert.equal(second.resultText, "43");
+			const legacy = await runCell(repl, "w4l", "(await __apollo_import__('skillw4l')).v");
+			assert.equal(legacy.status, "error");
+			// A skill that appears in a searched root after startup is picked up on first use.
+			mkSkill(envRoot, "midskill", 45);
+			const mid = await runCell(repl, "w4mid", "(await __apollo_import__('midskill')).v");
+			assert.equal(mid.status, "ok", mid.errorText || mid.resultText);
+			assert.equal(mid.resultText, "45");
+			// Host registration covers a skill that lives outside every searched root.
+			const outside = path.join(tmp, "outside");
+			mkSkill(outside, "regskill", 44);
+			const reg = await runCell(repl, "w4reg", `__apollo_register_skill__('regskill', 'regskill', ${JSON.stringify(path.join(outside, "regskill"))}) && (await __apollo_import__('regskill')).v`);
+			assert.equal(reg.status, "ok", reg.errorText || reg.resultText);
+			assert.equal(reg.resultText, "44");
+			await runCell(repl, "w4mark", "__apollo_mark_skill_unavailable__('skillw4e', 'skillw4e', 'boom'); 'marked'");
+			const marked = await runCell(repl, "w4m1", 'rlm.list_skills().find((s) => s.name === "skillw4e")?.status === "unavailable"');
+			assert.equal(marked.status, "ok", marked.errorText || marked.resultText);
+			assert.equal(marked.resultText, "true");
+			const markedErr = await runCell(repl, "w4m2", 'rlm.list_skills().find((s) => s.name === "skillw4e")?.error === "boom"');
+			assert.equal(markedErr.resultText, "true");
+			const regSkill = await runCell(repl, "w4m3", 'rlm.list_skills().find((s) => s.name === "regskill")?.status === "available"');
+			assert.equal(regSkill.resultText, "true");
 		} finally {
 			repl.close();
 		}
