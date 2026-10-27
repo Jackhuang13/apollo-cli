@@ -19,7 +19,7 @@ Child 以 fresh context 執行:fresh spawn 的 child 沒有你的對話史,brief
      felo skill;時效性主題偏好 2026/2025 來源)。
    - 需本機素材:可另 spawn scout 併行(讀 repo;brief 必附 repo 絕對路徑)。
    - 不需研究:跳過(invocation 明寫 skip-research,或 Leader 判定)。
-2. Architect(單獨、唯讀):收全部研究產物路徑,產出完整規劃書;plan:agy 時由 Leader 直接跑 agy headless(見 §2 plan:agy 小節),否則 spawn architect child。
+2. Architect(單獨、唯讀):收全部研究產物路徑,產出完整規劃書;spawn architect child。
 3. Builder(單獨;唯一本地寫角色):依規劃書產交付物;本地唯一寫入點為
    <artifact-dir>(父 session 的 artifact 目錄;recipe 見 §2「Artifact 目錄」)。
 4. DevOps(條件式;單獨;唯一遠端副作用 child):僅當需發佈遠端時出現。
@@ -40,9 +40,6 @@ Child 以 fresh context 執行:fresh spawn 的 child 沒有你的對話史,brief
 - local:強制跳過 devops(交付物只留本地)。
 - remote:<env>:宣告部署目標(spawn devops 前仍需用戶確認)。
 - skip-research:跳過研究階段(直接從 architect 起;上游素材 = 目標文字)。
-- plan:agy[<model>]:architect 階段外包給本機 agy(Antigravity CLI)headless
-  (預設 gemini-3.8-flash-medium,`<model>` 可覆蓋);失敗/不合約自動回退原生
-  rlm architect 並記錄。未帶 = 原生 rlm architect(預設)。
 
 ## 2. 啟動(一階段一 child;同一 IScript cell 內 spawn 後立即結束回合,不要 await 完成)
 
@@ -89,44 +86,11 @@ IScript REPL:
     const a = await rlm.spawn("<brief researcher>", "teamwork-research")
     const b = await rlm.spawn("<brief scout>", "teamwork-scout")
     // 之後每階段各一個 cell:先驗證上一階段產物路徑,填進 brief 再 spawn:
-    // plan:agy 時:architect 階段不 spawn,Leader 跑 agy headless(見 plan:agy 小節)
     const c = await rlm.spawn("<brief architect>", "teamwork-architect")
     const d = await rlm.spawn("<brief builder>", "teamwork-builder")
     const e = await rlm.spawn("<brief devops>", "teamwork-devops")   // 僅需遠端發佈時
     const f = await rlm.spawn("<brief tester>", "teamwork-tester")
 
-### plan:agy(選用:architect 階段外包給本機 agy)
-
-只適用 architect 階段(唯讀、單交付物);其餘階段照舊。Leader 直接執行
-(非 rlm child):
-
-1. brief = 標準 architect brief 骨架,加兩行:
-   (a)「把完整規劃書作為你的最終回答輸出;不要寫入任何檔案」。
-   (b)「交付物規格約束:最終交付物的本地寫入點只限
-       <artifact-dir>;repo 一律唯讀。」——agy 不
-       繼承管線寫入紀律,brief 必明寫(T6 實測曾漂回 repo 路徑)。
-   寫入 scratch 檔 `<artifact-dir>/agy-plan-<ts>/brief.txt`。
-2. 啟動(非阻塞 bash() handle,啟動後結束回合,完成時驗證;prompt 用
-   `-p=` 帶值形式,**不要用 stdin pipe**——1.3.5 裸 `-p` 會吃掉後接
-   flag):
-
-    cd <scratch> && agy -p="$(cat brief.txt)" --mode plan       --model <model,預設 gemini-3.8-flash-medium>       --add-dir <素材絕對路徑>       --output-format json --print-timeout 10m > out.json 2> err.log
-
-3. 接收 + 驗證(三層;任一層失敗 → 回退 spawn 原生 architect,記錄回退
-   原因):
-   a. out.json 可解析為單一 JSON 且 `status==SUCCESS`
-      (exit≠0 / INTERRUPTED / CANCELED / ERROR = 不採用;未知 model 為
-      turn 前即 exit 1 + ERROR,不耗 quota);
-   b. 結構自檢:architect 卡契約必要節 + 可核驗驗收標準清單 + H1;
-   c. `response` 逐字寫入 `<artifact-dir>/plan-<task>.md`。
-4. 審計:最終回報必記 `conversation_id`、model、`duration_seconds`、
-   `usage`。
-5. 模型不可用/改版(exit 1 + invalid model selection):管線照例回退原生
-   architect(不阻塞),但 Leader 必明確向用戶回報該 model 已不可用(附
-   錯誤訊息中的 currently available 清單),經用戶確認前不得改用其他
-   model 重試;不得靜默換 model。
-前置:agy on PATH 且 OAuth 有效;`authentication required` = 立即回退。
-不得讀 token 檔(house policy)。
 
 每階段回報以 agent_message 普通訊息到達:收到後驗證其聲稱的產物路徑,
 填下一階段 brief 並 spawn,再結束回合。不要阻塞等待 child 完成。

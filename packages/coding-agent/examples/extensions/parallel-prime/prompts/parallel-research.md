@@ -10,7 +10,8 @@ Research child 以 fresh context 執行:沒有你的對話史,因此每份 brief
 
 ## 1. 角度
 
-預設 2 個(問題廣泛時 3;上限 3;本地模型並發瓶頸)。用戶明確指定的角度優先。
+預設 2 個(問題廣泛時 3;總數至多 3;任一時刻至多 2 個 child 並行——3 個角度時
+先 spawn 2 個,收任一回報後再 spawn 第 3 個)。用戶明確指定的角度優先。
 
 1. 外部證據:現行權威來源——官方文件、spec、release notes、benchmark、
    issue threads、一手解釋。
@@ -25,7 +26,7 @@ Research child 以 fresh context 執行:沒有你的對話史,因此每份 brief
 - UI/產品題:使用者流、可及性、設計先例、實作約束
 - 時效性主題:近期動態角度,偏好 2026/2025 來源
 
-## 2. 啟動(每個角度一個 child;同一 IScript cell 內 spawn 後立即結束回合,不要 await 完成)
+## 2. 啟動(每個角度一個 child;同一 IScript cell 內 spawn 後立即結束回合,不要 await 完成;3 個角度:先 spawn 2,收任一回報後新 cell 再 spawn 第 3)
 
 Artifact 目錄(spawn 前先在父 kernel 執行一次;`art` 以字面值填進每份 brief 的
 `<artifact-dir>`——child 拿到字面絕對路徑,child 端零計算):

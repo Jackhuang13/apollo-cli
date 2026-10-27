@@ -10,8 +10,8 @@ Reviewer 以 fresh context 執行:沒有你的對話史,因此每份 brief 必�
 ## 1. 角度
 
 每個 reviewer 一個獨立角度。用戶指定的角度優先;否則從用戶意圖、計畫、
-已實作代碼與目前 diff 動態生成。預設 2 個(上限 3;本地模型並發瓶頸,
-「2 個強的優於 3 個弱的」)。
+已實作代碼與目前 diff 動態生成。預設 2 個(總數至多 3;任一時刻至多 2 個 child 並行——3 個角度時
+先 spawn 2 個,收任一回報後再 spawn 第 3 個)。
 
 以下為範例,不是固定預設:
 1. 正確性與回歸:是否滿足需求、保留既有行為、處理邊界案例、無隱藏 runtime 失敗。
@@ -32,7 +32,7 @@ Reviewer 以 fresh context 執行:沒有你的對話史,因此每份 brief 必�
 該目標,再定角度,並把目標明寫進每份 brief。
 若無引數:review 目前未提交的變更(`git status` + `git diff`)或最近一次 commit。
 
-## 3. 啟動(每個角度一個 child;同一 IScript cell 內 spawn 後立即結束回合,不要 await 完成)
+## 3. 啟動(每個角度一個 child;同一 IScript cell 內 spawn 後立即結束回合,不要 await 完成;3 個角度:先 spawn 2,收任一回報後新 cell 再 spawn 第 3)
 
 Artifact 目錄(spawn 前先在父 kernel 執行一次;`art` 以字面值填進每份 brief 的
 `<artifact-dir>`——child 拿到字面絕對路徑,child 端零計算):
