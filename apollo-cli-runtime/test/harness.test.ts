@@ -133,3 +133,15 @@ test("HarnessState overview summarizes harness state entries", () => {
 		fs.rmSync(tempDir, { recursive: true, force: true });
 	}
 });
+
+test("harness rejects object ids and kwargs-style arguments with positional guidance", () => {
+	const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "harness-test-"));
+	const state = new HarnessState(path.join(tempDir, "harness_state.json"));
+	try {
+		assert.throws(() => state.delete_memory({} as any), "use positional arguments");
+		assert.throws(() => state.get("memory", {} as any), "use positional arguments");
+		assert.throws(() => state.create_memory({ title: "t", content: "c" } as any, "c"), "use positional arguments");
+	} finally {
+		fs.rmSync(tempDir, { recursive: true, force: true });
+	}
+});

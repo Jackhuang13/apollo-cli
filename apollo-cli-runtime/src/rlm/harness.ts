@@ -358,8 +358,11 @@ function describeEntry(id: unknown, title: unknown): string {
 
 function requireText(kind: string, entryName: string, field: string, value: unknown): asserts value is string {
 	if (typeof value !== "string" || !value) {
+		const hint = isPlainRecord(value)
+			? " (use positional arguments: create_*(title, content, options?), update_*(id, title, content, options?), delete_*(id, options?))"
+			: "";
 		throw new Error(
-			`${kind} entry ${JSON.stringify(entryName)} rejected: ${field} must be a non-empty string, got ${typeName(value)}`,
+			`${kind} entry ${JSON.stringify(entryName)} rejected: ${field} must be a non-empty string, got ${typeName(value)}${hint}`,
 		);
 	}
 }
@@ -843,6 +846,7 @@ export class HarnessState {
 		options: { global_?: boolean; global?: boolean } = {},
 	): HarnessEntry | null {
 		const [strippedId, isGlobal] = stripScopePrefix(id, resolveGlobalFlag(options.global_, options));
+		requireText(kind, describeEntry(id, undefined), "id", strippedId ?? id);
 		const target = this._globalTarget(isGlobal);
 		if (target) {
 			return target.get(kind, strippedId ?? id);
@@ -865,6 +869,7 @@ export class HarnessState {
 		options: { global_?: boolean; global?: boolean } = {},
 	): boolean {
 		const [strippedId, isGlobal] = stripScopePrefix(id, resolveGlobalFlag(options.global_, options));
+		requireText(kind, describeEntry(id, undefined), "id", strippedId ?? id);
 		const target = this._globalTarget(isGlobal);
 		if (target) {
 			return target.delete(kind, strippedId ?? id);

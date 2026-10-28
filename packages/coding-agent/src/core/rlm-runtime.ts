@@ -385,7 +385,9 @@ export function createRlmListSubagentsHostHandler(handler: RlmListSubagentsHandl
 export function createRlmDeleteSubagentHostHandler(handler: RlmDeleteSubagentHandler): HostRequestHandler {
 	return async (payload) => {
 		if (typeof payload.target !== "string" || !payload.target.trim()) {
-			throw new Error("rlm.delete_subagent target must be a non-empty string");
+			throw new Error(
+				"rlm.delete_subagent target must be a non-empty string (pass handle.rlm_child_id, handle.name, or roster.session_name)",
+			);
 		}
 		const { subagent, outcome } = await handler(payload.target.trim());
 		return outcome === undefined ? { subagent } : { subagent, outcome };
@@ -402,11 +404,15 @@ export function createRlmCollectHostHandler(handler: RlmCollectHandler): HostReq
 	return async (payload) => {
 		const rawTargets = payload.targets;
 		if (rawTargets !== undefined && rawTargets !== null && !Array.isArray(rawTargets)) {
-			throw new Error("rlm.collect targets must be an array of child ids or names");
+			throw new Error(
+				"rlm.collect targets must be an array of child ids, names, or handles (e.g. [handle.rlm_child_id])",
+			);
 		}
 		const targets = (rawTargets ?? []).map((target) => {
 			if (typeof target !== "string" || !target.trim()) {
-				throw new Error("rlm.collect targets must be non-empty strings");
+				throw new Error(
+					"rlm.collect targets must be non-empty strings (pass handle.rlm_child_id, handle.name, or roster.session_name)",
+				);
 			}
 			return target.trim();
 		});

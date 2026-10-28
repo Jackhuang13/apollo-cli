@@ -35,7 +35,7 @@ export const _NOT_CALLABLE_MESSAGE =
 	"  await rlm.delete_subagent(id)                — delete a subagent\n" +
 	"  rlm.view(path, { start, end })               — read file with line numbers\n" +
 	"  await bash(command, { timeout, bg })         — run shell commands\n" +
-	"  await mcp.list_tools() / mcp.call_tool(...)  — interact with MCP servers\n" +
+	"  await mcp.list_tools(server) / mcp.call_tool(server, tool, args)  — interact with MCP servers\n" +
 	"  harness                                      — inspect/evolve harness rules & skills";
 
 export const _RENAMED_RUN_MESSAGE =
@@ -240,11 +240,38 @@ export function list_skills(): Array<{ name: string; path: string; status: "avai
 
 export const listSkills = list_skills;
 
+/**
+ * Resolve a subagent selector to a plain string id. Accepts a non-empty string,
+ * a live spawn handle, or a list_subagents() roster row; throws with repair
+ * guidance for anything else.
+ */
+function _resolveTargetId(target: unknown, caller: string): string {
+	if (typeof target === "string") {
+		const trimmed = target.trim();
+		if (trimmed) return trimmed;
+		throw new Error(
+			`${caller} target must be a non-empty string (pass handle.rlm_child_id, handle.name, or roster.session_name)`,
+		);
+	}
+	if (typeof target === "object" && target !== null && !Array.isArray(target)) {
+		for (const field of ["rlm_child_id", "name", "session_name", "active_session_id", "session_id"]) {
+			const candidate = (target as Record<string, unknown>)[field];
+			if (typeof candidate === "string" && candidate.trim()) return candidate.trim();
+		}
+		throw new Error(
+			`${caller} cannot resolve a target id from the given object; pass a string id or name (handle.rlm_child_id or handle.name)`,
+		);
+	}
+	throw new Error(`${caller} target must be a non-empty string or a subagent handle/roster object, got ${Array.isArray(target) ? "an array" : typeof target}`);
+}
+
 export async function collect(
 	targets?: unknown,
 	optionsOrTimeout?: Record<string, unknown> | number,
 ): Promise<Record<string, unknown>> {
-	const payload: Record<string, unknown> = { targets };
+	const payload: Record<string, unknown> = {
+		targets: Array.isArray(targets) ? targets.map((target) => _resolveTargetId(target, "rlm.collect")) : targets,
+	};
 	if (typeof optionsOrTimeout === "number") {
 		payload.timeout_ms = optionsOrTimeout;
 	} else if (optionsOrTimeout && typeof optionsOrTimeout === "object") {
@@ -303,8 +330,8 @@ export async function complete(options: CompleteOptions = {}): Promise<Record<st
 	})) as unknown as Record<string, unknown>;
 }
 
-export async function delete_subagent(target: string): Promise<Record<string, unknown>> {
-	return await op("rlm.delete_subagent", { target });
+export async function delete_subagent(target: string | Record<string, unknown>): Promise<Record<string, unknown>> {
+	return await op("rlm.delete_subagent", { target: _resolveTargetId(target, "rlm.delete_subagent") });
 }
 
 export const deleteSubagent = delete_subagent;

@@ -36,6 +36,10 @@ const PYTHON_ONLY_MARKERS = [
 	"inspect.signature(",
 	"old_str=old",
 	"name='api-reviewer'",
+	"name='worker'",
+	"name='researcher'",
+	"timeout_ms=0",
+	"receiver_role='parent'",
 ];
 
 function rlmPrompt(activeTools: string[] | undefined, installedSkills: string[] = []) {

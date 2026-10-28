@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { create_session, delete_subagent, find_models, list_subagents, spawn } from "../src/rlm/mod.ts";
+import { collect, create_session, delete_subagent, find_models, list_subagents, spawn } from "../src/rlm/mod.ts";
 import * as repl from "../src/rlm/repl.ts";
 
 test("create_session validates non-empty prompt", async () => {
@@ -143,3 +143,19 @@ test("spawn and create_session support both string positional and object paramet
 	}
 });
 
+test("delete_subagent and collect coerce handles and roster rows to string ids", async () => {
+	const seen: unknown[] = [];
+	repl._setHostReplyResolver(async (type: string, payload?: any) => {
+		seen.push(type === "rlm.delete_subagent" ? payload?.target : payload?.targets);
+		return type === "rlm.delete_subagent" ? { ok: true, deleted: payload?.target } : { results: [] };
+	});
+	try {
+		await delete_subagent({ rlm_child_id: "sub-9", name: "worker" });
+		await delete_subagent({ session_name: "subagent-worker" });
+		await collect([{ rlm_child_id: "sub-1" }, "worker-b"], { timeout_ms: 0 });
+		assert.deepEqual(seen, ["sub-9", "subagent-worker", ["sub-1", "worker-b"]]);
+		await assert.rejects(() => delete_subagent({ status: "completed" }), /cannot resolve a target id/);
+	} finally {
+		repl._setHostReplyResolver(null);
+	}
+});

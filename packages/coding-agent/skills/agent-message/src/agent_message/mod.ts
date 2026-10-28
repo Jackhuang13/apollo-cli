@@ -45,6 +45,11 @@ export async function send(
 	if (!text.trim()) {
 		throw new Error("agent_message.send message must be a non-empty string.");
 	}
+	if (options !== undefined && !isRecord(options)) {
+		throw new TypeError(
+			`agent_message.send options must be an object (e.g. { receiver_role: "parent" }), got ${Array.isArray(options) ? "an array" : typeof options}`,
+		);
+	}
 	const { receiver_role: role, receiver_name: name } = options;
 	let payload: Record<string, unknown>;
 	if (role === undefined) {

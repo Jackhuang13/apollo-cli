@@ -32,7 +32,7 @@ const REPL_CONTROL_PROMPT = [
 	"",
 	"Do not assume the REPL is the native runtime of the external thing being investigated. A repository, package, service, dataset, paper, website, benchmark, or API may have its own environment and normal interface. Evaluate external systems through their own interface, then use the REPL to coordinate the process and analyze what comes back.",
 	"",
-	"`bash(command, options)` starts a shell command in the background and returns a handle immediately: `const h = bash('npm test')`. Commands have a default timeout of 600s (10 minutes) unless overridden with `{ timeout: seconds }`; for commands expected to run longer, pass `{ timeout: null }` to run indefinitely. Use `h.pid` / `h.running` for liveness, `h.tail(n)` / `h.output()` for combined stdout+stderr so far, `h.descendants()` to inspect child processes, `h.poll()` for a non-blocking result, `h.kill()` to terminate (SIGTERM, escalating to SIGKILL; on Windows kill() uses taskkill /T and detached or reparented descendants may survive), and `await h` (or `await bash('cmd')`) for the completed result with exit_code, output, and duration. On a completed result, `output` is a string property (`result.output`), not a method; the `output()` method exists only on a running handle, before awaiting. Prefer bash() for long-running commands so the turn keeps working. Run shell commands with `bash()`, not raw child_process: child_process calls block the kernel, show the user nothing while they run, and spawn processes the harness cannot see or stop.",
+	"`bash(command, options)` starts a shell command in the background and returns a handle immediately: `const h = bash('npm test')`. Commands have a default timeout of 600s (10 minutes) unless overridden with `{ timeout: seconds }`; for commands expected to run longer, pass `{ timeout: null }` to run indefinitely. Use `h.pid` / `h.running` for liveness, `h.tail(n)` / `h.output()` for combined stdout+stderr so far, `h.descendants()` to inspect child processes, `h.poll()` for a non-blocking result, `h.kill()` to terminate (SIGTERM, escalating to SIGKILL; on Windows kill() uses taskkill /T and detached or reparented descendants may survive), and `await h` (or `await bash('cmd')`) for the completed result with exit_code, output, and duration. On the handle, `h.output()` is a method that works while the command runs and after it completes; on the completed result returned by `await h`, `output` is a string property (`result.output`), not a method. Prefer bash() for long-running commands so the turn keeps working. Run shell commands with `bash()`, not raw child_process: child_process calls block the kernel, show the user nothing while they run, and spawn processes the harness cannot see or stop.",
 	"",
 	"Important: do not install dependencies into the kernel just to make an external project import or run there. If a project import, test, script, CLI, or dependency check is needed, run it through that project's own environment and normal command interface. For example, in a project repo use its documented commands, `npm test`, `cargo test`, `python ...`, or the active project interpreter from the repo root. Treat failures from that native environment as the relevant result.",
 	"",
@@ -42,7 +42,7 @@ const REPL_CONTROL_PROMPT = [
 	"",
 	"State in the kernel persists across cells: named variables, helper functions, classes, imports, notes, parsed outputs, and helper data structures all remain available in every later turn. Tool calls are themselves async expressions, so their return values can be bound to variables and composed into program logic just like any other call.",
 	"",
-	"Continual harness state is available as `rlm.harness` and `rlm.get_harness_state()`. CRUD calls are local to this session by default: `rlm.harness.create_memory(...)`, `rlm.harness.update_memory(...)`, `rlm.harness.delete_memory(...)`, `rlm.harness.create_skill(...)`, `rlm.harness.update_skill(...)`, `rlm.harness.delete_skill(...)`, `rlm.harness.create_subagent(...)`, `rlm.harness.update_subagent(...)`, `rlm.harness.delete_subagent(...)`, `rlm.harness.create_prompt_note(...)`, `rlm.harness.update_prompt_note(...)`, `rlm.harness.delete_prompt_note(...)`, plus `rlm.harness.record_refinement(...)` and `rlm.harness.overview()`. Use `global: true` or `global_: true` for stable cross-session lessons.",
+	"Continual harness state is available as `rlm.harness` and `rlm.get_harness_state()`. CRUD calls are local to this session by default: `rlm.harness.create_memory(...)`, `rlm.harness.update_memory(...)`, `rlm.harness.delete_memory(...)`, `rlm.harness.create_skill(...)`, `rlm.harness.update_skill(...)`, `rlm.harness.delete_skill(...)`, `rlm.harness.create_subagent(...)`, `rlm.harness.update_subagent(...)`, `rlm.harness.delete_subagent(...)`, `rlm.harness.create_prompt_note(...)`, `rlm.harness.update_prompt_note(...)`, `rlm.harness.delete_prompt_note(...)`, plus `rlm.harness.record_refinement(...)` and `rlm.harness.overview()`. All CRUD calls are positional: `create_*(title, content, options?)`, `update_*(id, title, content, options?)`, `delete_*(id, options?)`. Use `global: true` or `global_: true` in options for stable cross-session lessons.",
 	"",
 	"Terminology: continual harness names the persisted prompt, memory, skill, and subagent layer; RLM names the runtime, IScript REPL kernel, and native call interface exposed to the model.",
 	"",
@@ -155,7 +155,7 @@ export function buildRlmPrompt(options: RlmPromptOptions): string {
 	if (depth === 0 && hasIpython) {
 		parts.push(
 			"",
-			"From a daemon-backed depth-0 session, use `await rlm.create_session('task', name='researcher')` (or `await rlm.create_session({ prompt: 'task', name: 'researcher' })`) to start a separate top-level session. The call returns after the daemon creates the session and accepts its first prompt. Inline and nested sessions cannot use it. `rlm.spawn(...)` still creates a child.",
+			"From a daemon-backed depth-0 session, use `await rlm.create_session('task', { name: 'researcher' })` (or `await rlm.create_session({ prompt: 'task', name: 'researcher' })`) to start a separate top-level session. The call returns after the daemon creates the session and accepts its first prompt. Inline and nested sessions cannot use it. `rlm.spawn(...)` still creates a child.",
 		);
 	}
 
@@ -174,7 +174,7 @@ export function buildRlmPrompt(options: RlmPromptOptions): string {
 		if (hasAgentMessage) {
 			parts.push(
 				"Children reply explicitly with `await agent_message.send(message, { receiver_role: 'parent' })` when an answer is needed. Replies and follow-ups arrive as ordinary agent messages; not every task requires a reply.",
-				"Use `agent_message.send(message, { receiver_role: 'child', receiver_name: child.name })` for follow-ups.",
+				"Use `agent_message.send(message, { receiver_role: 'child', receiver_name: child.name })` for follow-ups; a live spawn handle exposes `name`, while a `rlm.list_subagents()` roster row exposes `session_name`.",
 			);
 		}
 		if (hasAgentObserve) {
@@ -185,7 +185,7 @@ export function buildRlmPrompt(options: RlmPromptOptions): string {
 			parts.push("Inspect files a child wrote when you need to collect its work without an observation capability.");
 		}
 		parts.push(
-			"Spawn independent children in separate calls and end your turn instead of awaiting completion. Multiple replies may arrive over multiple turns. Delete a direct child explicitly with `await rlm.delete_subagent(child)` when it is no longer needed.",
+			"Spawn independent children in separate calls and end your turn instead of awaiting completion. Multiple replies may arrive over multiple turns. Delete a direct child explicitly with `await rlm.delete_subagent(handle.rlm_child_id)` when it is no longer needed; the selector is the child id (`handle.rlm_child_id`) or name (`handle.name`), and `rlm.list_subagents()` roster rows expose it as `session_name` (use it to recover children after a kernel restart).",
 		);
 	}
 
@@ -216,11 +216,11 @@ export function buildSubagentGuidance(
 	const lines = [
 		"# Delegating to sub-agents",
 		"",
-		"Spawn independent, self-contained work with `handle = await rlm.spawn('task', name='worker')` (or `await rlm.spawn({ prompt: 'task', name: 'worker' })`). This returns at admission, not completion; keep the handle to stop or inspect the child later.",
+		"Spawn independent, self-contained work with `handle = await rlm.spawn('task', { name: 'worker' })` (or `await rlm.spawn({ prompt: 'task', name: 'worker' })`). This returns at admission, not completion; keep the handle to stop or inspect the child later.",
 	];
 	if (options.hasAgentMessage) {
 		lines.push(
-			"Ask for an explicit reply when needed. A child replies with `await agent_message.send(message, receiver_role='parent')` (or `{ receiver_role: 'parent' }`); parent follow-ups use `receiver_role='child'` plus the child's name or id. Not every message needs a reply.",
+			"Ask for an explicit reply when needed. A child replies with `await agent_message.send(message, { receiver_role: 'parent' })`; parent follow-ups use `{ receiver_role: 'child' }` plus the child's name or id as `receiver_name`. Not every message needs a reply.",
 		);
 	}
 	lines.push("Use `await rlm.list_subagents()` after kernel restart or compaction.");
@@ -231,7 +231,7 @@ export function buildSubagentGuidance(
 		lines.push("Use `agent_observe` for bounded transcript inspection.");
 	}
 	lines.push(
-		"Fan-in results with `await rlm.collect(targets, timeout_ms=0)` (or `await rlm.collect(targets, { timeout_ms: 0 })`): it returns typed snapshots of direct children (status, answer preview, error) without steering anyone; an explicit timeout blocks only that call until the children settle or the deadline passes.",
+		"Fan-in results with `await rlm.collect(targets, { timeout_ms: 0 })`: `targets` is an array of child id / name strings (handle objects also work); it returns typed snapshots of direct children (status, answer preview, error) without steering anyone; an explicit timeout blocks only that call until the children settle or the deadline passes.",
 		"Large child outputs belong in files that you read selectively; `collect` snapshots are previews, not full results.",
 		"Delegate parallel context-heavy research or independent implementation; do a single known lookup, edit, or command inline.",
 	);

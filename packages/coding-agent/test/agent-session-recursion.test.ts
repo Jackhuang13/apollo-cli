@@ -2718,7 +2718,7 @@ describe("AgentSession rlm recursion", () => {
 		await waitFor(() => parentRun.status === "done");
 	});
 
-	it("handles rlm calls from asyncio tasks after the scheduling cell is idle", async () => {
+	it("handles rlm calls from async tasks after the scheduling cell is idle", async () => {
 		const prompts: string[] = [];
 		const manager = new ReplKernelManager({
 			cwd: tempDir,
@@ -2737,24 +2737,18 @@ describe("AgentSession rlm recursion", () => {
 
 		try {
 			const scheduled = await manager.execute(`
-import asyncio
-import rlm
-
-async def _delayed_rlm():
-    await asyncio.sleep(0.05)
-    return await rlm.spawn("detached child after idle", name="detached-worker")
-
-_task = asyncio.create_task(_delayed_rlm())
-print("scheduled")
+_task = (async () => {
+	await new Promise((r) => setTimeout(r, 50));
+	return await rlm.spawn("detached child after idle", { name: "detached-worker" });
+})();
 `);
 
 			expect(scheduled.status).toBe("ok");
-			expect(scheduled.stdout.trim()).toBe("scheduled");
 			await waitFor(() => prompts.includes("detached child after idle"));
 
 			const finished = await manager.execute(`
-_result = await _task
-print(_result.name)
+_result = await _task;
+console.log(_result.name);
 `);
 
 			expect(finished.status).toBe("ok");

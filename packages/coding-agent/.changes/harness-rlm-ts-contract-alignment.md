@@ -1,0 +1,2 @@
+- Fixed rlm and continual harness prompt/kernel contract mismatches by standardizing on TypeScript option objects and coercing subagent handles in delete_subagent and collect.
+- Fixed silent harness and agent_message failures: harness get/delete now reject non-string ids, and agent_message.send rejects non-object options with an explicit TypeError.
