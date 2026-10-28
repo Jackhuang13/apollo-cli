@@ -1,6 +1,6 @@
 # Standalone binaries
 
-The macOS and Linux release archives contain `prime-agent` and its support files. Normal application execution does not require Node, npm, or Bun. Keep the archive contents together: moving only the executable breaks asset and Python runtime discovery. Linux archives cover glibc and musl (Alpine), on ARM64 and x64, plus baseline x64 builds for CPUs without AVX2. Windows is outside this distribution.
+The macOS and Linux release archives contain `apollo-cli` and its support files. Normal application execution does not require Node, npm, or Bun. Keep the archive contents together: moving only the executable breaks asset and kernel runtime discovery. Linux archives cover glibc and musl (Alpine), on ARM64 and x64, plus baseline x64 builds for CPUs without AVX2. Windows is outside this distribution.
 
 On macOS, use the published installer:
 
@@ -25,9 +25,7 @@ Bun's default x64 build requires AVX2, so hosts without it need the `baseline` a
 
 musl archives link against `libstdc++`, which Alpine does not preinstall. Run `apk add --no-cache libstdc++` first; without it the executable cannot start. The installer recognizes that loader failure, names the package, and stops instead of downloading the much larger Node installation; set `PRIME_AGENT_INSTALL_METHOD=node` to take the Node route anyway.
 
-The Python tool uses the existing managed CPython setup. Its first use requires uv and network access to install Python and Python dependencies. The archive includes the matching `prime-agent-runtime` sources and built-in Python skills. It contains no prebuilt virtual environment or `node_modules` directory. External tools and extension-specific dependencies retain their own requirements.
-
-On Intel macOS, the current `cryptography` dependency has no compatible wheel and is built from source during Python setup. This also requires Xcode Command Line Tools, Rust, and OpenSSL development libraries; see the [cryptography build requirements](https://cryptography.io/en/stable/installation/#building-cryptography-on-macos). These Python dependency requirements also apply to the existing Node distribution. Shipping Python dependency wheels is separate work.
+The IScript (TypeScript) kernel runs on the host Node.js runtime, or on Deno when `APOLLO_KERNEL_DENO` points at a Deno binary. The archive includes the matching `apollo-cli-runtime` sources and built-in TypeScript skills. It contains no `node_modules` directory. Extension-specific dependencies retain their own requirements.
 
 ## Build
 
@@ -45,7 +43,7 @@ The first command builds the host platform; the second cross-compiles every rele
 Assemble local archives from the repository root:
 
 ```sh
-node scripts/assemble-release-archives.mjs packages/coding-agent/binaries /tmp/prime-agent-archives 0.9.4
+node scripts/assemble-release-archives.mjs packages/coding-agent/binaries /tmp/apollo-cli-archives 0.9.4
 ```
 
 This creates platform tarballs, `SHA256SUMS`, and `binaries.json`. The version argument sets the archive's package metadata without changing the checkout or the compiled executable. Each archive has a flat layout:
@@ -56,6 +54,7 @@ install.sh
 package.json
 LICENSE, README.md, CHANGELOG.md
 prime-agent-runtime/
+apollo-cli-runtime/
 skills/
 theme/
 assets/
@@ -63,6 +62,8 @@ export-html/
 docs/
 examples/
 photon_rs_bg.wasm
+models.bundled.json
+mcp-services.bundled.json
 ```
 
 ## Validation and release integration
@@ -70,7 +71,7 @@ photon_rs_bg.wasm
 From `packages/coding-agent`, run the artifact tests against an archive for the host platform:
 
 ```sh
-PRIME_AGENT_TEST_ARCHIVE=/tmp/prime-agent-archives/prime-agent-0.9.4-darwin-arm64.tar.gz \
+PRIME_AGENT_TEST_ARCHIVE=/tmp/apollo-cli-archives/prime-agent-0.9.4-darwin-arm64.tar.gz \
 PRIME_AGENT_TEST_UV="$(command -v uv)" \
 npx tsx ../../node_modules/vitest/dist/cli.js --run test/compiled-artifact.test.ts
 ```
@@ -93,7 +94,7 @@ Pinning a release whose checksum inventory only advertises npm packages uses the
 
 Set `PRIME_AGENT_INSTALL_METHOD=node` to explicitly keep the Node installation, or `binary` to require the compiled application. `PRIME_AGENT_INSTALL_DIR` overrides the managed root (default `$XDG_DATA_HOME/prime-agent` or `~/.local/share/prime-agent`); `PRIME_AGENT_BIN_DIR` overrides the public command directory (default `~/.local/bin`). Both must be absolute. Existing unrelated commands are never replaced. `PRIME_AGENT_INSTALL_LINK=0` installs without a public link.
 
-Each release keeps its executable and assets together under `releases/`. The stable `bin/prime-agent` link changes only after validation, and `bin/previous` retains the earlier release. The installer serializes changes with `.install-lock`; normal interruption cleans up the lock. Activation also records a durable `.activation-state` intent before changing either launcher. After a forced kill, confirm the recorded installer process is no longer running before removing the stale lock; the next installer or rollback invocation then completes or clears an unambiguous interrupted activation before making another change. User data remains in `~/.prime/agent`.
+Each release keeps its executable and assets together under `releases/`. The stable `bin/prime-agent` link changes only after validation, and `bin/previous` retains the earlier release. The installer serializes changes with `.install-lock`; normal interruption cleans up the lock. Activation also records a durable `.activation-state` intent before changing either launcher. After a forced kill, confirm the recorded installer process is no longer running before removing the stale lock; the next installer or rollback invocation then completes or clears an unambiguous interrupted activation before making another change. User data remains in `~/.apollo/agent`.
 
 Reinstalling the same archive creates a fresh release directory with a unique suffix, so it can repair missing or changed assets without modifying files used by existing processes. Cleanup runs only after the replacement is healthy.
 
@@ -107,7 +108,7 @@ Releases containing native archives also include a bridge at the existing npm CL
 
 Homebrew, source checkouts, other package-manager layouts, read-only prefixes, and unsupported platforms keep the Node route. `PRIME_AGENT_INSTALL_METHOD=node` disables migration. Offline launches defer downloads. Installation failures keep the Node application usable and suppress automatic retries for 24 hours; set `PRIME_AGENT_MIGRATE_RETRY=1` for an explicit earlier retry. Cancelling migration does not start that retry window. Migration also works when npm lifecycle scripts were disabled.
 
-Already-released updaters pass the package URL directly to npm. npm 12's default remote-package policy can reject that download with `EALLOWREMOTE` before this bridge runs; the installed Node application remains usable. For a trusted release source, retry with `NPM_CONFIG_ALLOW_REMOTE=all prime-agent update`, then launch `prime-agent` normally to migrate. This setting applies only to that command and its children, without changing global npm configuration. Fresh compiled installs and compiled updates do not use npm; unsupported hosts remaining on Node can encounter this policy on later updates too.
+Already-released updaters pass the package URL directly to npm. npm 12's default remote-package policy can reject that download with `EALLOWREMOTE` before this bridge runs; the installed Node application remains usable. For a trusted release source, retry with `NPM_CONFIG_ALLOW_REMOTE=all apollo-cli update`, then launch `apollo-cli` normally to migrate. This setting applies only to that command and its children, without changing global npm configuration. Fresh compiled installs and compiled updates do not use npm; unsupported hosts remaining on Node can encounter this policy on later updates too.
 
 An interactive update from an older Node release can restore its session on a Node daemon worker before the foreground launcher finishes migration. The public command then runs Bun, while that resident worker keeps running until the daemon is restarted. Resuming the saved conversation after shutdown starts it on Bun; migration does not forcibly replace a healthy worker solely to change runtimes.
 
@@ -119,11 +120,11 @@ Failed automatic migrations retry after 24 hours; `PRIME_AGENT_MIGRATE_RETRY=1` 
 
 ## Updates and rollback
 
-Run `prime-agent update` or `/update` to install the latest version on the current stable or beta channel. The channel follows the running version unless you choose one: `/nightly` (or `prime-agent update --nightly`) warns that nightly builds are unreleased and may be broken, asks for confirmation, then switches to the nightly channel and runs the update with the usual busy-session confirmation, `/nightly off` (or `--stable`) returns to stable, and `/nightly status` shows the current choice. Nightly builds are the `-beta` prereleases published in `beta.json`. The channel is stored only after you confirm, and only after the busy-session confirmation, so declining either leaves settings untouched. If the nightly manifest cannot be resolved, nothing is installed and the channel is not changed. The preference is per user and cannot be overridden by project settings; later `/update` runs keep following it. Updates never move to a lower base version. If the channel's current release is behind what you have installed, `update` reports that you are ahead and installs nothing; with `--force` it refuses explicitly. Compiled installs can use `--rollback` to go back to the retained previous release. Managed compiled installations require a matching platform entry in the release manifest and verify its SHA-256 against both the release checksums and downloaded archive. Failed downloads or validation leave the current executable and assets active. Unmanaged archives must be updated through their original installer.
+Run `apollo-cli update` or `/update` to install the latest version on the current stable or beta channel. The channel follows the running version unless you choose one: `/nightly` (or `apollo-cli update --nightly`) warns that nightly builds are unreleased and may be broken, asks for confirmation, then switches to the nightly channel and runs the update with the usual busy-session confirmation, `/nightly off` (or `--stable`) returns to stable, and `/nightly status` shows the current choice. Nightly builds are the `-beta` prereleases published in `beta.json`. The channel is stored only after you confirm, and only after the busy-session confirmation, so declining either leaves settings untouched. If the nightly manifest cannot be resolved, nothing is installed and the channel is not changed. The preference is per user and cannot be overridden by project settings; later `/update` runs keep following it. Updates never move to a lower base version. If the channel's current release is behind what you have installed, `update` reports that you are ahead and installs nothing; with `--force` it refuses explicitly. Compiled installs can use `--rollback` to go back to the retained previous release. Managed compiled installations require a matching platform entry in the release manifest and verify its SHA-256 against both the release checksums and downloaded archive. Failed downloads or validation leave the current executable and assets active. Unmanaged archives must be updated through their original installer.
 
 Updates retain the previous release, preserve user configuration and sessions, and use the existing busy-session confirmation and daemon restart coordination. Relaunches resolve the stable launcher after activation, so the new process runs the updated application. The installer checks that the active release has not changed since the update was planned and serializes activation with its installation lock.
 
-Run `prime-agent update --rollback` or `/update --rollback` to restore the previous local release without downloading anything. Its managed path, checksum marker, package version, install source, required assets, executable version, and help probe are validated before switching. These checks establish internal installation consistency; they do not cryptographically re-verify every installed file against the original archive. A second rollback restores the release you just left when that release remains healthy. Rollback requires a retained release and applies only to managed compiled installations. `--force` permits reinstalling the version selected by the release channel.
+Run `apollo-cli update --rollback` or `/update --rollback` to restore the previous local release without downloading anything. Its managed path, checksum marker, package version, install source, required assets, executable version, and help probe are validated before switching. These checks establish internal installation consistency; they do not cryptographically re-verify every installed file against the original archive. A second rollback restores the release you just left when that release remains healthy. Rollback requires a retained release and applies only to managed compiled installations. `--force` permits reinstalling the version selected by the release channel.
 
 If the active release is damaged, rollback validates and activates the healthy previous release without retaining the damaged one as a rollback target. Update planning can use the intact previous release's installer when it declares support for damaged-release recovery. Older retained installers instead give published-installer recovery guidance. If the current executable cannot start, rerun the published installer with `PRIME_AGENT_INSTALL_DIR` set to the managed root. Repairs preserve an existing healthy previous release.
 

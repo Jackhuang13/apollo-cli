@@ -1,48 +1,34 @@
 # Quickstart
 
-This page gets you from install to a useful first Prime Agent session.
+This page gets you from install to a useful first Apollo CLI session.
 
 ## Install
 
-Install the latest stable release on Linux or macOS:
+Install from source on Linux or macOS (Node.js 22.8.0 or newer):
 
 ```bash
-curl --proto '=https' --proto-redir '=https' -fsSL https://app.primeintellect.ai/prime-agent/install.sh | sh
+git clone https://github.com/Jackhuang13/apollo-cli
+cd apollo-cli
+npm ci
+./apollo-cli.sh
 ```
 
-To try the latest beta built from `main`:
-
-```bash
-curl --proto '=https' --proto-redir '=https' -fsSL https://app.primeintellect.ai/prime-agent/install.sh | sh -s -- beta
-```
-
-Both commands fetch versioned Prime Agent release artifacts and install the `prime-agent` command. The inherited npm workspace identifiers in the source tree are not the public install path.
-
-Then start Prime Agent in the project directory you want it to work on:
+Then start Apollo CLI in the project directory you want it to work on:
 
 ```bash
 cd /path/to/project
-prime-agent
+apollo-cli
 ```
 
-To run a source checkout instead, use Node.js 22.8.0 or newer:
-
-```bash
-git clone https://github.com/PrimeIntellect-ai/prime-agent
-cd prime-agent
-npm ci
-./prime-agent.sh
-```
-
-The source runner preserves the directory from which it is invoked, so you can also call `/path/to/prime-agent/prime-agent.sh` from another project.
+The source runner preserves the directory from which it is invoked, so you can also call `/path/to/apollo-cli/apollo-cli.sh` from another project.
 
 ## Authenticate
 
-Prime Agent can use subscription providers through `/login`, or API-key providers through environment variables or its auth file.
+Apollo CLI can use subscription providers through `/login`, or API-key providers through environment variables or its auth file.
 
 ### Option 1: Subscription Login
 
-Start Prime Agent and run:
+Start Apollo CLI and run:
 
 ```text
 /login
@@ -52,32 +38,32 @@ Then select a provider. Built-in subscription logins include Claude Pro/Max, Cha
 
 ### Option 2: API Key
 
-Set an API key before launching Prime Agent:
+Set an API key before launching Apollo CLI:
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-prime-agent
+apollo-cli
 ```
 
-You can also run `/login` and select an API-key provider to store the key in `~/.prime/agent/auth.json`.
+You can also run `/login` and select an API-key provider to store the key in `~/.apollo/agent/auth.json`.
 
 See [Providers](providers.md) for all supported providers, environment variables, and cloud-provider setup.
 
 ## First Session
 
-Once Prime Agent starts, type a request and press Enter:
+Once Apollo CLI starts, type a request and press Enter:
 
 ```text
 Summarize this repository and tell me how to run its checks.
 ```
 
-Prime Agent gives the model one built-in tool, `ipython`. The long-lived kernel is a control environment for reading and editing files, running project commands, inspecting data, retaining Python state, and invoking installed skills. The kernel runtime is bootstrapped automatically on first use; set `PRIME_AGENT_KERNEL_PYTHON` to use an existing Python environment with `prime-agent-runtime`.
+Apollo CLI gives the model one built-in tool, `iscript`. The long-lived kernel is a persistent TypeScript control environment for reading and editing files, running project commands, inspecting data, retaining state across turns, and invoking installed skills. The kernel runtime is bootstrapped automatically on first use.
 
-Prime Agent runs in your current working directory and can modify files there. Use git or another checkpointing workflow if you want easy rollback.
+Apollo CLI runs in your current working directory and can modify files there. Use git or another checkpointing workflow if you want easy rollback.
 
 ## Recursive Subagents
 
-Recursive subagents are a built-in Prime Agent capability. The model spawns independent work from the Python REPL with `await rlm.spawn("subtask", name="worker")`; each call returns at admission with a child handle and never returns the answer. Children send requested results as explicit `agent_message` replies to the parent or write them to files. Child agents use the same TypeScript agent runtime, providers, tools, skills, and session machinery as the parent.
+Recursive subagents are a built-in Apollo CLI capability. The model spawns independent work from the IScript (TypeScript) REPL with `await rlm.spawn("subtask", "worker")`; each call returns at admission with a child handle and never returns the answer. Children send requested results as explicit `agent_message` replies to the parent or write them to files. Child agents use the same TypeScript agent runtime, providers, tools, skills, and session machinery as the parent.
 
 You can prompt the model to use that capability directly:
 
@@ -87,9 +73,9 @@ Review authentication and test coverage as independent subtasks. Run them in par
 
 See [RLM Runtime Architecture](rlm-runtime.md) for the API and execution model.
 
-## Give Prime Agent Project Instructions
+## Give Apollo CLI Project Instructions
 
-Prime Agent loads context files at startup. Add an `AGENTS.md` file to tell it how to work in a project:
+Apollo CLI loads context files at startup. Add an `AGENTS.md` file to tell it how to work in a project:
 
 ```markdown
 # Project Instructions
@@ -99,12 +85,12 @@ Prime Agent loads context files at startup. Add an `AGENTS.md` file to tell it h
 - Keep responses concise.
 ```
 
-Prime Agent loads:
+Apollo CLI loads:
 
-- `~/.prime/agent/AGENTS.md` for global instructions
+- `~/.apollo/agent/AGENTS.md` for global instructions
 - `AGENTS.md` or `CLAUDE.md` from parent directories and the current directory
 
-Restart Prime Agent, or run `/reload`, after changing context files.
+Restart Apollo CLI, or run `/reload`, after changing context files.
 
 ## Common Things to Try
 
@@ -113,8 +99,8 @@ Restart Prime Agent, or run `/reload`, after changing context files.
 Type `@` in the editor to fuzzy-search files, or pass files on the command line:
 
 ```bash
-prime-agent @README.md "Summarize this"
-prime-agent @src/app.ts @src/app.test.ts "Review these together"
+apollo-cli @README.md "Summarize this"
+apollo-cli @src/app.ts @src/app.test.ts "Review these together"
 ```
 
 Images can be pasted with Ctrl+V (Alt+V on Windows) or dragged into supported terminals.
@@ -127,7 +113,7 @@ In interactive mode:
 !npm run lint
 ```
 
-The command output is sent to the model. Use `!!command` to run a command without adding its output to model context. During agent work, the model normally runs project commands from the Python REPL with `bash()`.
+The command output is sent to the model. Use `!!command` to run a command without adding its output to model context. During agent work, the model normally runs project commands from the IScript (TypeScript) REPL with `bash()`
 
 ### Switch Models
 
@@ -135,33 +121,33 @@ Use `/model` or Ctrl+L to choose a model. Use `/effort` to set the reasoning lev
 
 ### Continue Later
 
-Sessions are saved automatically under `~/.prime/agent/sessions/`:
+Sessions are saved automatically under `~/.apollo/agent/sessions/`:
 
 ```bash
-prime-agent -c                  # Continue the most recent session
-prime-agent -r [path|id]        # Browse sessions or open a specific session
+apollo-cli -c                  # Continue the most recent session
+apollo-cli -r [path|id]        # Browse sessions or open a specific session
 ```
 
-Inside Prime Agent, use `/resume`, `/new`, `/tree`, `/fork`, and `/clone` to manage sessions. Persistent sessions run in worker processes, so closing the TUI detaches from the agent rather than necessarily stopping it. Use `prime-agent agents` to inspect or reattach to active work.
+Inside Apollo CLI, use `/resume`, `/new`, `/tree`, `/fork`, and `/clone` to manage sessions. Persistent sessions run in worker processes, so closing the TUI detaches from the agent rather than necessarily stopping it. Use `apollo-cli agents` to inspect or reattach to active work.
 
 ### Non-Interactive Mode
 
 For one-shot prompts:
 
 ```bash
-prime-agent -p "Summarize this codebase"
-cat README.md | prime-agent -p "Summarize this text"
-prime-agent -p @screenshot.png "What's in this image?"
+apollo-cli -p "Summarize this codebase"
+cat README.md | apollo-cli -p "Summarize this text"
+apollo-cli -p @screenshot.png "What's in this image?"
 ```
 
 Use `--mode json` for JSON event output or `--mode rpc` for process integration.
 
 ## Next Steps
 
-- [Using Prime Agent](usage.md) - interactive mode, slash commands, sessions, context files, and CLI reference.
+- [Using Apollo CLI](usage.md) - interactive mode, slash commands, sessions, context files, and CLI reference.
 - [Providers](providers.md) - authentication and model setup.
 - [Settings](settings.md) - global and project configuration.
 - [Keybindings](keybindings.md) - shortcuts and customization.
-- [Prime Agent Packages](packages.md) - install shared extensions, skills, prompts, and themes.
+- [Apollo CLI Packages](packages.md) - install shared extensions, skills, prompts, and themes.
 
 Platform notes: [Windows](windows.md), [Termux](termux.md), [tmux](tmux.md), [Terminal setup](terminal-setup.md), [Shell aliases](shell-aliases.md).

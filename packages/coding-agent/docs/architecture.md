@@ -1,6 +1,6 @@
 # Architecture Overview
 
-Prime Agent separates terminal presentation, process coordination, agent execution, the model-facing REPL (Python or IScript), and persisted state. In this fork the model-facing kernel has two runtimes: installed releases ship the Python runtime, while a source checkout resolves to the TypeScript IScript runtime (see [IScript Kernel](iscript-kernel.md)). Normal interactive sessions use the daemon-backed path below; explicit SDK and fallback integrations can run the same `AgentSessionRuntime` in process.
+Apollo CLI separates terminal presentation, process coordination, agent execution, the model-facing IScript (TypeScript) REPL, and persisted state (see [IScript Kernel](iscript-kernel.md)). Normal interactive sessions use the daemon-backed path below; explicit SDK and fallback integrations can run the same `AgentSessionRuntime` in process.
 
 ## System at a Glance
 
@@ -16,7 +16,7 @@ flowchart LR
         runtime["AgentSessionRuntime"]
         root["Root AgentSession"]
         scheduler["Scheduler"]
-        kernel["Root RLM kernel<br/>(Python | IScript)"]
+        kernel["Root IScript kernel<br/>(TypeScript)"]
         children["RLM child runtimes<br/>session + optional kernel"]
 
         runtime --> root
@@ -44,7 +44,7 @@ flowchart LR
 - The supervisor owns discovery, routing, attachments, worker health, and cross-agent message delivery.
 - Each worker owns one root runtime, its scheduler, kernels, and all descendants below that root.
 - `AgentSession` owns provider calls, queues, tools, compaction, goals, child lifecycles, and transcript writes.
-- The REPL is the model-facing control environment: Python in installed releases, IScript (TypeScript) in source checkouts. Typed host requests return authoritative operations to the TypeScript session.
+- The REPL is the model-facing control environment: IScript (TypeScript) in both source checkouts and installed releases. Typed host requests return authoritative operations to the TypeScript session.
 
 Workers and kernels are separate processes for lifecycle and failure containment, not security sandboxes. They normally run with the same operating-system permissions as the client.
 
@@ -89,7 +89,7 @@ From the session queue onward, the same execution and persistence path is used w
 
 This repository is a fork of PrimeIntellect-ai/prime-agent, renamed Apollo CLI. One change affects the diagrams above:
 
-- The "Python kernel" node is now a **dual-runtime kernel**. A source checkout resolves to the TypeScript IScript runtime (`apollo-cli-runtime/`, Node `--experimental-strip-types` or Deno); installed releases ship the Python runtime (`prime-agent-runtime/`, `python -m rlm.repl`). The model-facing tool is `iscript` with `ipython` as an alias of the same implementation. The IScript host-request bridge is not yet fully wired (P0); read [IScript Kernel](iscript-kernel.md) before adjusting the kernel.
+- The "Python kernel" node in the upstream diagram is now the **IScript (TypeScript) kernel**. Both source checkouts and installed releases resolve to the TypeScript IScript runtime (`apollo-cli-runtime/`, Node `--experimental-strip-types` or Deno). The model-facing tool is `iscript` with `ipython` as an alias of the same implementation. See [IScript Kernel](iscript-kernel.md) for the protocol, snapshots, and remaining integration gaps.
 
 ## Detailed Architecture
 

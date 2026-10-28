@@ -1,19 +1,19 @@
 # MCP Integrations
 
-Connect external services (Linear, Notion, …) to Prime Agent over the
+Connect external services (Linear, Notion, …) to Apollo CLI over the
 [Model Context Protocol](https://modelcontextprotocol.io).
 
-Consistent with Prime Agent's single-tool design, MCP integrations are **not**
+Consistent with Apollo CLI's single-tool design, MCP integrations are **not**
 exposed as new agent tools. Every service is reached through the one generic
-Python `mcp` module that is pre-imported in the kernel:
+`mcp` module that is pre-imported in the kernel:
 
-```python
-# Discover, then call. Connection ids come from /plugins or the connections list.
-tools = await mcp.list_tools("linear")
-result = await mcp.call_tool("linear", "list_issues", {"team": "Engineering"})
+```ts
+// Discover, then call. Connection ids come from /plugins or the connections list.
+const tools = await mcp.list_tools("linear")
+const result = await mcp.call_tool("linear", "list_issues", { team: "Engineering" })
 ```
 
-The MCP connection runs inside the kernel via the official `mcp` Python SDK. The
+The MCP connection runs inside the kernel via the official `mcp` SDK (TypeScript). The
 host's jobs are the service catalog, interactive login (browser OAuth), credential
 storage and refresh, and connection verification.
 
@@ -35,9 +35,9 @@ storage and refresh, and connection verification.
 - Each card shows its honest state: **Connect**, **Connected**, **Reconnect**,
   **Verifying**, **Requires setup**, or **Disabled**.
 - Press Enter on a **Connect** card to review and complete browser OAuth. The
-  credentials are stored locally in `~/.prime/agent/auth.json` under
-  `mcp:<service>`; Prime Agent never proxies them.
-- After login, Prime Agent verifies the connection with a real MCP handshake
+  credentials are stored locally in `~/.apollo/agent/auth.json` under
+  `mcp:<service>`; Apollo CLI never proxies them.
+- After login, Apollo CLI verifies the connection with a real MCP handshake
   (initialize + `tools/list`). A stored token alone is never reported as
   Connected: until the handshake succeeds the state stays **Verifying** or
   **Reconnect**. On success the connection activates in the current conversation
@@ -51,7 +51,7 @@ storage and refresh, and connection verification.
 same connections. The advanced subcommands (`/mcp add|list|get|remove`) remain
 available and unchanged.
 
-Connection records live in `~/.prime/agent/mcp-connections.json`. They keep the
+Connection records live in `~/.apollo/agent/mcp-connections.json`. They keep the
 `connectionId` (the dispatch id and credential key), the catalog `serviceId`, the
 bound endpoint, and the last verification result. Multiple accounts per service
 will use distinct connection ids; grants are never merged because names look
@@ -59,21 +59,22 @@ similar.
 
 ## How a call works
 
-The tool set is defined by the **server**, not by Prime Agent, so discover before
+The tool set is defined by the **server**, not by Apollo CLI, so discover before
 you call — don't assume tool names or arguments:
 
-```python
-# 1. Discover available tools
-for tool in await mcp.list_tools("notion"):
-    print(tool["name"], "-", tool["description"])
+```ts
+// 1. Discover available tools
+for (const tool of await mcp.list_tools("notion")) {
+    console.log(tool.name, "-", tool.description)
+}
 
-# 2. Call with a JSON-Schema-shaped dict
-result = await mcp.call_tool("notion", "notion-search", {"query": "meeting notes"})
+// 2. Call with a JSON-Schema-shaped object
+const result = await mcp.call_tool("notion", "notion-search", { query: "meeting notes" })
 ```
 
 - Every call is `async` — always `await`.
-- Results are already-parsed Python: a `dict` for structured output, a string for
-  text, or a list of content blocks otherwise.
+- Results are already-parsed values: an object for structured output, a string
+  for text, or an array of content blocks otherwise.
 - Missing credentials surface as an explicit error telling the user to run
   `/plugins`; a tool that returns an error raises `McpToolError`.
 - Configuration is re-read per call; `await mcp.reload()` closes all current
@@ -108,20 +109,20 @@ an explicit user action in `/plugins`.
 ## Generic MCP servers
 
 Manage generic servers from either the shell (which exits without starting an
-agent) or the TUI. Both surfaces update only `~/.prime/agent/settings.json`:
+agent) or the TUI. Both surfaces update only `~/.apollo/agent/settings.json`:
 
 ```bash
-prime-agent mcp add remote --url https://mcp.example.com/mcp --bearer-token-env-var EXAMPLE_TOKEN
-prime-agent mcp add local --cwd /absolute/path --env TOKEN=EXAMPLE_TOKEN -- node server.js --stdio
-prime-agent mcp list
-prime-agent mcp get remote
-prime-agent mcp remove remote
+apollo-cli mcp add remote --url https://mcp.example.com/mcp --bearer-token-env-var EXAMPLE_TOKEN
+apollo-cli mcp add local --cwd /absolute/path --env TOKEN=EXAMPLE_TOKEN -- node server.js --stdio
+apollo-cli mcp list
+apollo-cli mcp get remote
+apollo-cli mcp remove remote
 ```
 
 Use the same forms after `/mcp` in the TUI. Add `--oauth` for the existing OAuth
 login flow and then use `/mcp login <name>`; use `--force` to replace a complete
 existing entry. Static secret values are not accepted: bearer and stdio secrets
-are environment-variable references. Project `.prime/agent/settings.json` MCP
+are environment-variable references. Project `.apollo/agent/settings.json` MCP
 entries are ignored for execution, so a repository cannot start a local process
 or shadow a user server.
 
@@ -157,12 +158,12 @@ to the user settings file:
 }
 ```
 
-The generic `mcp` module is pre-imported in the Python REPL. Server and tool names are
+The generic `mcp` module is pre-imported in the IScript (TypeScript) REPL. Server and tool names are
 passed through unchanged:
 
-```python
-tools = await mcp.list_tools("remote")
-result = await mcp.call_tool("remote", "search", {"query": "example"})
+```ts
+const tools = await mcp.list_tools("remote")
+const result = await mcp.call_tool("remote", "search", { query: "example" })
 ```
 
 HTTP servers may be anonymous, use static `headers`, use a token named by
@@ -181,10 +182,10 @@ and terminates stdio children.
 
 ## Migration from the authored wrappers
 
-Earlier releases shipped authored Linear/Notion Python wrapper packages
+Earlier releases shipped authored Linear/Notion wrapper packages
 (`import linear`, `import notion`) and the `rlm.McpIntegration` authoring API.
 These are removed: every service now uses the same generic `mcp` route — no
-per-service Python packages, and adding a service is catalog data, not code.
+per-service packages, and adding a service is catalog data, not code.
 Existing `mcp:linear` / `mcp:notion` credentials keep working unchanged; run
 `await mcp.list_tools("linear")` where you previously imported `linear`.
 
@@ -193,9 +194,9 @@ Existing `mcp:linear` / `mcp:notion` credentials keep working unchanged; run
 - Discover before assuming tool names or argument schemas.
 - Token presence is not connection readiness; the Connected state requires a
   verified handshake.
-- Generic MCP connections are kernel-local. Separate Prime Agent sessions use
+- Generic MCP connections are kernel-local. Separate Apollo CLI sessions use
   separate connections even when they reference the same user setting.
-- A custom `PRIME_AGENT_KERNEL_PYTHON` must include the current
-  `prime-agent-runtime` dependencies.
+- A custom `APOLLO_KERNEL_DENO` interpreter must be able to execute the
+  runtime's TypeScript entry point.
 
 See also: [Skills](skills.md), [Settings](settings.md).

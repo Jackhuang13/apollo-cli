@@ -1,6 +1,6 @@
 # RLM Programming Model
 
-Prime Agent is built around a recursive language model (RLM) runtime: the model works inside a persistent Python control environment and composes capabilities as code. Provider calls, session persistence, child lifecycles, scheduling, and safety policy remain in the TypeScript host; the Python REPL is the model-facing programming surface.
+Apollo CLI is built around a recursive language model (RLM) runtime: the model works inside a persistent TypeScript control environment (the IScript REPL) and composes capabilities as code. Provider calls, session persistence, child lifecycles, scheduling, and safety policy remain in the TypeScript host; the IScript (TypeScript) REPL is the model-facing programming surface.
 
 ## RLM Loop
 
@@ -8,14 +8,14 @@ Prime Agent is built around a recursive language model (RLM) runtime: the model 
 flowchart LR
     task["Task + working context"]
     parent["Parent model"]
-    kernel["Persistent Python kernel"]
+    kernel["Persistent IScript kernel"]
     data["Files · data · shell commands"]
-    skills["Python-backed skills"]
+    skills["TypeScript-backed skills"]
     children["rlm.spawn(...) child agents"]
     answer["Answer or next turn"]
 
     task --> parent
-    parent -->|"Python call"| kernel
+    parent -->|"IScript call"| kernel
     kernel <-->|"inspect · search · transform"| data
     kernel <-->|"call functions"| skills
     kernel -->|"spawn focused work"| children
@@ -24,75 +24,74 @@ flowchart LR
     parent --> answer
 ```
 
-The parent keeps its own context focused while Python holds working state and child agents receive only the context needed for their subtasks.
+The parent keeps its own context focused while the kernel holds working state and child agents receive only the context needed for their subtasks.
 
 ## Core Invariants
 
 ### 1. Execution is programmatic
 
-The default RLM runtime exposes one built-in model tool: `ipython`. Reading and editing files, running project commands, transforming results, invoking skills, and delegating work all begin from that persistent kernel instead of separate built-in tool calls.
+The default RLM runtime exposes one built-in model tool: `iscript` (`ipython` remains an alias). Reading and editing files, running project commands, transforming results, invoking skills, and delegating work all begin from that persistent kernel instead of separate built-in tool calls.
 
-Python state survives across tool calls and compaction. Variables, imports, functions, parsed results, and task handles remain available on later turns:
+Kernel state survives across tool calls and compaction. Variables, imports, functions, parsed results, and task handles remain available on later turns:
 
-```python
-from pathlib import Path
+```ts
+import fs from "node:fs"
 
-config_files = list(Path(".").rglob("*.toml"))
-large_files = [path for path in config_files if path.stat().st_size > 10_000]
+const config_files = fs.readdirSync("src", { recursive: true }).filter((name) => String(name).endsWith(".toml"))
+const large_files = config_files.filter((name) => fs.statSync(name).size > 10_000)
 ```
 
 Run a project's normal commands through its own environment with `bash()`:
 
-```python
-result = await bash("npm run check")
-print(result.output)
+```ts
+const result = await bash("npm run check")
+console.log(result.output)
 ```
 
 For a long command, keep the live handle and let the turn end instead of blocking:
 
-```python
-checks = bash("npm test")
+```ts
+const checks = bash("npm test")
 checks.pid
 ```
 
-When an unawaited handle's process group finishes, Prime Agent sends a "Background command finished" notice with its PID and foreground exit code. A busy agent receives it as steering at the next safe turn boundary, without interrupting a running tool. An idle agent resumes to handle it. While the handle runs, timer-driven goal and autonomous continuations pause instead of re-prompting the waiting agent; the last handle settling is the wake-up — its completion notice, when one is owed, is delivered first, then the held continuation resumes behind it. `await handle` and `handle.poll()` still return the foreground result before shell background jobs finish. The kernel stays resident until the process group is reaped, including for handles awaited in their creating cell. The message asks the agent to inspect the saved handle with `poll()`, `output()`, or `tail()` and continue the task. `await bash(...)` stays synchronous from the agent's perspective and does not send a second notice.
+When an unawaited handle's process group finishes, Apollo CLI sends a "Background command finished" notice with its PID and foreground exit code. A busy agent receives it as steering at the next safe turn boundary, without interrupting a running tool. An idle agent resumes to handle it. While the handle runs, timer-driven goal and autonomous continuations pause instead of re-prompting the waiting agent; the last handle settling is the wake-up — its completion notice, when one is owed, is delivered first, then the held continuation resumes behind it. `await handle` and `handle.poll()` still return the foreground result before shell background jobs finish. The kernel stays resident until the process group is reaped, including for handles awaited in their creating cell. The message asks the agent to inspect the saved handle with `poll()`, `output()`, or `tail()` and continue the task. `await bash(...)` stays synchronous from the agent's perspective and does not send a second notice.
 
-Reading the finished result withdraws the notice. Any read from a live cell counts -- `await handle`, `handle.poll()`, `handle.output()`, `handle.tail()` -- so a notice that is still queued is dropped and a notice that was not sent yet is never sent. Reads that no cell receives do not count: a detached watcher polling the handle between turns leaves the notice in place, because that notice is the only wake-up an idle session gets, and an `asyncio.as_completed` or `create_task` wrapper that resolves with no live cell waiting for it does not count either. A notice the agent already received is never retracted.
+Reading the finished result withdraws the notice. Any read from a live cell counts -- `await handle`, `handle.poll()`, `handle.output()`, `handle.tail()` -- so a notice that is still queued is dropped and a notice that was not sent yet is never sent. Reads that no cell receives do not count: a detached watcher polling the handle between turns leaves the notice in place, because that notice is the only wake-up an idle session gets, and an unawaited `Promise.allSettled` wrapper that resolves with no live cell waiting for it does not count either. A notice the agent already received is never retracted.
 
-Each `bash()` call is its own process, while Python state, `os.chdir(...)`, and `os.environ[...]` changes persist in the kernel and apply to later `bash()` calls. Prime Agent extensions may intentionally add custom tools, but the built-in RLM design does not require a separate model tool for every capability.
+Each `bash()` call is its own process, while kernel state — module-level bindings, `process.chdir(...)`, and `process.env[...]` changes — persists in the kernel and applies to later `bash()` calls. Apollo CLI extensions may intentionally add custom tools, but the built-in RLM design does not require a separate model tool for every capability.
 
 ### 2. Subagents are native RLM calls
 
 The `rlm` object is preloaded in the kernel. Spawn a child with `rlm.spawn`, which requires a `name`:
 
-```python
-handle = await rlm.spawn("Review the authentication flow for security issues", name="auth-reviewer")
-print(handle.rlm_child_id, handle.name, handle.session_dir, handle.model)
+```ts
+const handle = await rlm.spawn("Review the authentication flow for security issues", "auth-reviewer")
+console.log(handle.rlm_child_id, handle.name, handle.session_dir, handle.model)
 ```
 
 The call returns immediately after task admission with a child handle; it never waits for or returns the child's answer. The TypeScript host creates a normal child `AgentSession` with an independent context and session directory. The child inherits the parent model, provider configuration, skills, tools, retry policy, and resource loader unless the call requests another configured model.
 
 Spawn independent children in separate calls and end the turn instead of awaiting completion:
 
-```python
-api_review = await rlm.spawn("Review the public API", name="api-reviewer")
-test_review = await rlm.spawn("Review the test coverage", name="test-reviewer")
-integration_audit = await rlm.spawn("Run the slow integration audit", name="integration-audit")
+```ts
+const api_review = await rlm.spawn("Review the public API", "api-reviewer")
+const test_review = await rlm.spawn("Review the test coverage", "test-reviewer")
+const integration_audit = await rlm.spawn("Run the slow integration audit", "integration-audit")
 ```
 
 Results arrive only through explicit `agent_message` replies or files, never as an `rlm.spawn()` return value. Children reply when an answer is needed:
 
-```python
-await agent_message.send(message, receiver_role="parent")
+```ts
+await agent_message.send(message, { receiver_role: "parent" })
 ```
 
 The parent can follow up with a retained child:
 
-```python
+```ts
 await agent_message.send(
     "Check the newly added regression test.",
-    receiver_role="child",
-    receiver_name=api_review.name,
+    { receiver_role: "child", receiver_name: api_review.name },
 )
 ```
 
@@ -102,33 +101,34 @@ An admission handle contains `rlm_child_id`, `name`, `session_dir`, and `model`.
 
 The parent-scoped child registry survives compaction, kernel restart, and parent restoration:
 
-```python
-children = await rlm.list_subagents()
-for child in children:
-    print(child.session_name, child.status, child.active_session_id)
+```ts
+const children = await rlm.list_subagents()
+for (const child of children) {
+    console.log(child.session_name, child.status, child.active_session_id)
+}
 ```
 
 Successfully completed daemon-backed children remain addressable while their parent session is open. Delete a child only when its context is no longer needed:
 
-```python
-await rlm.delete_subagent(children[0])
+```ts
+await rlm.delete_subagent(children[0].session_name)
 ```
 
 The default recursion depth allows a root agent to create children. Raising the configured depth allows descendants to recurse further.
 
 ### 3. Skills add programmatic capability
 
-Prime Agent supports the Agent Skills markdown format and extends it with Python-backed skills. Both use `SKILL.md` for discovery, routing, and instructions. A Python-backed skill also contains a Python package that Prime Agent installs into the kernel environment and exposes by import name.
+Apollo CLI supports the Agent Skills markdown format and extends it with TypeScript-backed skills. Both use `SKILL.md` for discovery, routing, and instructions. A TypeScript-backed skill also ships a `deno.json` and a `src/<name>/mod.ts` module that the IScript kernel imports and exposes by import name.
 
 For a skill named `release-audit`, the model can call:
 
-```python
-report = await release_audit(repository=".", target_version="0.4.0")
+```ts
+const report = await release_audit(".", { target_version: "0.4.0" })
 ```
 
-This makes Python-backed skills a superset of instruction-only skills: they can provide guidance, scripts, references, dependencies, typed callables, and optional shell commands. They may also call `rlm.spawn(...)` themselves when a capability needs recursive delegation.
+This makes TypeScript-backed skills a superset of instruction-only skills: they can provide guidance, scripts, references, dependencies, typed callables, and optional shell commands. They may also call `rlm.spawn(...)` themselves when a capability needs recursive delegation.
 
-Only skill metadata is placed in the startup prompt. The agent loads the full `SKILL.md` when the task matches, then inspects and calls the documented Python API. See [Skills](skills.md) for discovery, packaging, and the built-in skill-creation workflow.
+Only skill metadata is placed in the startup prompt. The agent loads the full `SKILL.md` when the task matches, then inspects and calls the documented TypeScript API. See [Skills](skills.md) for discovery, packaging, and the built-in skill-creation workflow.
 
 ### 4. State is designed to outlive one turn
 
@@ -145,12 +145,12 @@ See [Long-Running and Background Agents](long-running-agents.md) for these lifec
 
 ## Host Bridge
 
-Python skills use typed host requests for capabilities whose authoritative state belongs outside the kernel. For example, the `goal`, `agent_message`, `rlm_heartbeat`, and `compact` skills call `rlm.host_request(...)`; the TypeScript host validates the request and owns the state transition.
+TypeScript skills use typed host requests for capabilities whose authoritative state belongs outside the kernel. For example, the `goal`, `agent_message`, `rlm_heartbeat`, and `compact` skills call the preloaded `host_request(...)`; the TypeScript host validates the request and owns the state transition.
 
-This keeps credentials, provider execution, transcript writes, worker routing, and scheduling out of Python while retaining a programmatic model interface.
+This keeps credentials, provider execution, transcript writes, worker routing, and scheduling out of the kernel while retaining a programmatic model interface.
 
 ## Trust Model
 
-The Python kernel runs model-generated Python and project commands with the worker's operating-system permissions. It is a durable control environment, not a security sandbox. Review third-party Python skills and use an external sandbox or restricted environment for untrusted repositories and instructions.
+The IScript kernel runs model-generated TypeScript/JavaScript code and project commands with the worker's operating-system permissions. It is a durable control environment, not a security sandbox. Review third-party TypeScript skills and use an external sandbox or restricted environment for untrusted repositories and instructions.
 
 For implementation details, see [RLM Runtime Architecture](rlm-runtime.md).

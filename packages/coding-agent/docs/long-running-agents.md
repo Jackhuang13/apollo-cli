@@ -1,6 +1,6 @@
 # Long-Running and Background Agents
 
-Prime Agent combines daemon-backed session workers with persistent state, scheduled prompts, direct agent messaging, goals, and bounded autonomous continuations. These features serve different purposes but share the same session and worker runtime.
+Apollo CLI combines daemon-backed session workers with persistent state, scheduled prompts, direct agent messaging, goals, and bounded autonomous continuations. These features serve different purposes but share the same session and worker runtime.
 
 ## Runtime Flow
 
@@ -18,7 +18,7 @@ flowchart TD
         policy["Continuation policy"]
         queue["Session prompt queue"]
         session["AgentSession"]
-        kernel["Persistent Python kernel"]
+        kernel["Persistent IScript kernel"]
         children["RLM child sessions"]
 
         heartbeat --> queue
@@ -44,24 +44,24 @@ The client can detach at any point. The resident worker continues to own the que
 
 ## Daemon-Backed Sessions
 
-Normal interactive sessions run in resident worker processes managed by a local supervisor. The worker owns the root session, its Python kernel, scheduled jobs, and RLM descendants.
+Normal interactive sessions run in resident worker processes managed by a local supervisor. The worker owns the root session, its IScript (TypeScript) kernel, scheduled jobs, and RLM descendants.
 
 Closing the terminal UI detaches the client; it does not stop the worker. List and reconnect to active agents with:
 
 ```bash
-prime-agent list
-prime-agent attach <agent>
+apollo-cli list
+apollo-cli attach <agent>
 ```
 
 Other lifecycle commands are:
 
 ```bash
-prime-agent agents                  # Open the agents view
-prime-agent rename <agent> <name>   # Give an agent a stable readable name
-prime-agent stop <agent>            # Stop one agent
-prime-agent status                  # Inspect background services
-prime-agent doctor [--fix]          # Diagnose or repair service state
-prime-agent shutdown [--force]      # Stop all agents and services
+apollo-cli agents                  # Open the agents view
+apollo-cli rename <agent> <name>   # Give an agent a stable readable name
+apollo-cli stop <agent>            # Stop one agent
+apollo-cli status                  # Inspect background services
+apollo-cli doctor [--fix]          # Diagnose or repair service state
+apollo-cli shutdown [--force]      # Stop all agents and services
 ```
 
 Workers persist transcripts as JSONL and store feature-specific state under the session artifact directory. A worker or supervisor restart can recover session state and schedules and rehydrate retained completed RLM children without treating a terminal client as the owner of the work.
@@ -73,31 +73,28 @@ Daemon workers are process-isolated for lifecycle and failure containment, not s
 The daemon routes direct messages between active sessions and retained daemon-backed subagents. From a shell:
 
 ```bash
-prime-agent send <agent> "Please verify the latest migration"
+apollo-cli send <agent> "Please verify the latest migration"
 ```
 
-From the Python kernel, use the preloaded `agent_observe` and `agent_message` Python skills:
+From the IScript kernel, use the preloaded `agent_observe` and `agent_message` skills:
 
-```python
-roster = await agent_observe.list_agents()
-receipt = await agent_message.send(
+```ts
+const roster = await agent_observe.list_agents()
+const receipt = await agent_message.send(
     "Recheck the endpoint after the latest edit",
-    receiver_role="sibling",
-    receiver_name="api-reviewer",
-    mode="auto",
+    { receiver_role: "sibling", receiver_name: "api-reviewer" },
 )
-print(receipt["deliveryStatus"])
+console.log(receipt["deliveryStatus"])
 ```
 
 For the current parent's direct RLM children, prefer the parent-scoped registry:
 
-```python
-children = await rlm.list_subagents()
-child = next(item for item in children if item.session_name == "api-reviewer")
+```ts
+const children = await rlm.list_subagents()
+const child = children.find((item) => item.session_name === "api-reviewer")
 await agent_message.send(
     "Continue with the updated diff",
-    receiver_role="child",
-    receiver_name=child.session_name,
+    { receiver_role: "child", receiver_name: child.session_name },
 )
 ```
 
@@ -111,13 +108,13 @@ A receipt is `delivered` when it reached an idle target's context or `queued` wh
 
 ## Heartbeats and Scheduled Prompts
 
-Prime Agent has three related scheduling surfaces:
+Apollo CLI has three related scheduling surfaces:
 
 | Surface | Owner | Purpose |
 |---|---|---|
 | `/heartbeat` | User | One visible recurring instruction for the current session. |
 | `rlm_heartbeat` | Agent | Multiple programmatically managed recurring instructions internal to the current session. |
-| `prime-agent schedule` | User or automation | General one-time or cron prompts targeted at an agent. |
+| `apollo-cli schedule` | User or automation | General one-time or cron prompts targeted at an agent. |
 
 ### User heartbeat
 
@@ -137,34 +134,25 @@ Heartbeat delivery defaults to steering active work. Add `--follow-up` when the 
 
 An agent can create several internal heartbeats programmatically:
 
-```python
-first = await rlm_heartbeat.create(
-    "check whether the test run finished",
-    interval="5m",
-    label="tests",
-)
-second = await rlm_heartbeat.create(
-    "inspect the deployment status",
-    interval="10m",
-    label="deploy",
-    delivery_mode="follow_up",
-)
+```ts
+const first = await rlm_heartbeat.create("check whether the test run finished", "5m", "tests")
+const second = await rlm_heartbeat.create("inspect the deployment status", "10m", "deploy", "follow_up")
 
 await rlm_heartbeat.list()
-await rlm_heartbeat.update(first["heartbeat"]["id"], status="pause")
+await rlm_heartbeat.update(first["heartbeat"]["id"], undefined, undefined, undefined, "pause")
 ```
 
-RLM heartbeats are distinct from the user's `/heartbeat`; the Python skill cannot replace or clear the user-owned heartbeat.
+RLM heartbeats are distinct from the user's `/heartbeat`; the skill cannot replace or clear the user-owned heartbeat.
 
 ### General schedules
 
 Schedule a one-time or recurring prompt for an addressable agent:
 
 ```bash
-prime-agent schedule add worker "in 30m" -- "Check the benchmark result"
-prime-agent schedule add worker "0 9 * * 1-5" -- "Review open work"
-prime-agent schedule list --all
-prime-agent schedule cancel <job-id>
+apollo-cli schedule add worker "in 30m" -- "Check the benchmark result"
+apollo-cli schedule add worker "0 9 * * 1-5" -- "Review open work"
+apollo-cli schedule list --all
+apollo-cli schedule cancel <job-id>
 ```
 
 Scheduled jobs are persisted per session and continue while the UI is detached. Due ticks are claimed before delivery so a crash does not replay an uncertain prompt, and missed ticks are coalesced rather than accumulated into an unbounded backlog.
@@ -189,8 +177,8 @@ Manage its state with:
 
 The model uses the kernel-side `goal` skill to inspect or finish the objective:
 
-```python
-state = await goal.get()
+```ts
+const state = await goal.get()
 await goal.complete()
 ```
 
@@ -198,7 +186,7 @@ Goal state records token usage, elapsed time, continuation count, and an optiona
 
 ## Autonomous Mode
 
-Autonomous mode is a bounded host policy for runs where no human input is expected. Prime Agent adds follow-up continuations until configured quality gates pass or a continuation, turn, token, or wall-clock limit is reached.
+Autonomous mode is a bounded host policy for runs where no human input is expected. Apollo CLI adds follow-up continuations until configured quality gates pass or a continuation, turn, token, or wall-clock limit is reached.
 
 Enable it in an interactive session. `/autonomous on` accepts the same budget
 options as the CLI, so an interactive run can define its own budget instead of
@@ -214,7 +202,7 @@ stopping at the default three continuations:
 Or configure a run from the CLI:
 
 ```bash
-prime-agent \
+apollo-cli \
   --autonomous \
   --autonomous-gate "npm run check" \
   --autonomous-max-turns 20 \
@@ -252,7 +240,7 @@ the run. A background `bash()` handle that never exits holds the pause
 indefinitely by design — the handle settling, not a timer, is the wake-up —
 and a user prompt always wakes the session immediately.
 
-Autonomous mode supports limits for continuations, assistant turns, tokens, and wall-clock duration. Gate commands run before the session may finish; a failed gate returns its bounded output to the agent for another attempt. Prime Agent avoids rerunning the same failed gate when the workspace has not changed.
+Autonomous mode supports limits for continuations, assistant turns, tokens, and wall-clock duration. Gate commands run before the session may finish; a failed gate returns its bounded output to the agent for another attempt. Apollo CLI avoids rerunning the same failed gate when the workspace has not changed.
 
 Goals and autonomous mode are complementary but different:
 
@@ -261,11 +249,11 @@ Goals and autonomous mode are complementary but different:
 
 ## Compaction and Continuity
 
-Automatic compaction handles context growth during long tasks. On overflow or near the configured threshold, Prime Agent summarizes older messages, retains recent context, and continues. The Python kernel persists through compaction, so variables, imports, helper functions, and task state remain available.
+Automatic compaction handles context growth during long tasks. On overflow or near the configured threshold, Apollo CLI summarizes older messages, retains recent context, and continues. The IScript kernel persists through compaction, so variables, imports, helper functions, and task state remain available.
 
 The agent can inspect or request compaction programmatically:
 
-```python
+```ts
 await compact.status()
 await compact.run("Preserve the failing tests and remaining migration steps")
 ```

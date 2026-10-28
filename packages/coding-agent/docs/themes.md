@@ -1,4 +1,4 @@
-> Prime Agent can create themes. Ask it to build one for your setup.
+> Apollo CLI can create themes. Ask it to build one for your setup.
 
 # Themes
 
@@ -16,11 +16,11 @@ Themes are JSON files that define colors for the TUI.
 
 ## Locations
 
-Prime Agent loads themes from:
+Apollo CLI loads themes from:
 
 - Built-in: `prime`, `dark`, `light`
-- Global: `~/.prime/agent/themes/*.json`
-- Project: `.prime/agent/themes/*.json`
+- Global: `~/.apollo/agent/themes/*.json`
+- Project: `.apollo/agent/themes/*.json`
 - Packages: `themes/` directories or `pi.themes` entries in `package.json`
 - Settings: `themes` array with files or directories
 - CLI: `--theme <path>` (repeatable)
@@ -37,15 +37,15 @@ Select a theme via `/settings` or in `settings.json`:
 }
 ```
 
-On first run, Prime Agent detects your terminal background and defaults to `prime` or `light`.
+On first run, Apollo CLI detects your terminal background and defaults to `prime` or `light`.
 
 ## Creating a Custom Theme
 
 1. Create a theme file:
 
 ```bash
-mkdir -p ~/.prime/agent/themes
-vim ~/.prime/agent/themes/my-theme.json
+mkdir -p ~/.apollo/agent/themes
+vim ~/.apollo/agent/themes/my-theme.json
 ```
 
 2. Define the theme with all required colors (see [Color Tokens](#color-tokens)):
@@ -121,7 +121,7 @@ vim ~/.prime/agent/themes/my-theme.json
 
 3. Select the theme via `/settings`.
 
-**Hot reload:** When you edit the currently active custom theme file, Prime Agent reloads it automatically for immediate visual feedback.
+**Hot reload:** When you edit the currently active custom theme file, Apollo CLI reloads it automatically for immediate visual feedback.
 
 ## Theme Format
 
@@ -278,7 +278,7 @@ Four formats are supported:
 
 ### Terminal Compatibility
 
-Prime Agent uses 24-bit RGB colors. Most modern terminals support this (iTerm2, Kitty, WezTerm, Windows Terminal, VS Code). For older terminals with only 256-color support, Prime Agent falls back to the nearest approximation.
+Apollo CLI uses 24-bit RGB colors. Most modern terminals support this (iTerm2, Kitty, WezTerm, Windows Terminal, VS Code). For older terminals with only 256-color support, Apollo CLI falls back to the nearest approximation.
 
 Check truecolor support:
 

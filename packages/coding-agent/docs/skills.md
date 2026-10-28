@@ -1,18 +1,18 @@
-> Prime Agent can create skills. Ask it to build one for your use case.
+> Apollo CLI can create skills. Ask it to build one for your use case.
 
 # Skills
 
-Skills are self-contained capability packages that Prime Agent loads on demand. A skill provides specialized workflows, setup instructions, helper scripts, and reference documentation for specific tasks.
+Skills are self-contained capability packages that Apollo CLI loads on demand. A skill provides specialized workflows, setup instructions, helper scripts, and reference documentation for specific tasks.
 
-Prime Agent implements the [Agent Skills standard](https://agentskills.io/specification), warning about violations but remaining lenient. It also supports Python-backed skills: a superset of markdown skills that install Python packages into the persistent Python kernel.
+Apollo CLI implements the [Agent Skills standard](https://agentskills.io/specification), warning about violations but remaining lenient. It also supports TypeScript-backed skills: a superset of markdown skills that ship an IScript module the persistent kernel imports and exposes to the model.
 
 ## Table of Contents
 
 - [Locations](#locations)
 - [Built-in Skills](#built-in-skills)
 - [How Skills Work](#how-skills-work)
-- [Python-Backed Skills](#python-backed-skills)
-- [Creating Skills with Prime Agent](#creating-skills-with-prime-agent)
+- [TypeScript-Backed Skills](#typescript-backed-skills)
+- [Creating Skills with Apollo CLI](#creating-skills-with-apollo-cli)
 - [Skill Commands](#skill-commands)
 - [Skill Structure](#skill-structure)
 - [Frontmatter](#frontmatter)
@@ -24,21 +24,21 @@ Prime Agent implements the [Agent Skills standard](https://agentskills.io/specif
 
 > **Security:** Skills can instruct the model to perform any action and may include executable code the model invokes. Review skill content before use.
 
-Prime Agent loads skills from:
+Apollo CLI loads skills from:
 
 - Global:
-  - `~/.prime/agent/skills/`
+  - `~/.apollo/agent/skills/`
   - `~/.agents/skills/`
 - Project:
-  - `.prime/agent/skills/`
+  - `.apollo/agent/skills/`
   - `.agents/skills/` in `cwd` and ancestor directories (up to git repo root, or filesystem root when not in a repo)
 - Packages: `skills/` directories or `pi.skills` entries in `package.json`
 - Settings: `skills` array with files or directories
 - CLI: `--skill <path>` (repeatable, additive even with `--no-skills`)
-- Built-in: `skills/` shipped with the prime-agent package (lowest precedence)
+- Built-in: `skills/` shipped with the apollo-cli package (lowest precedence)
 
 Discovery rules:
-- In `~/.prime/agent/skills/` and `.prime/agent/skills/`, direct root `.md` files are discovered as individual skills
+- In `~/.apollo/agent/skills/` and `.apollo/agent/skills/`, direct root `.md` files are discovered as individual skills
 - In all skill locations, directories containing `SKILL.md` are discovered recursively
 - In `~/.agents/skills/` and project `.agents/skills/`, root `.md` files are ignored
 
@@ -46,10 +46,10 @@ Disable discovery with `--no-skills` (explicit `--skill` paths still load).
 
 ## Built-in Skills
 
-Prime Agent ships with built-in skills that load by default:
+Apollo CLI ships with built-in skills that load by default:
 
 - `prime-intellect` - Prime Intellect products and workflows via the prime CLI: verifiers environments and the Environments Hub, evaluations (local and hosted), Hosted Training and prime-rl, sandboxes, tunnels, Prime Inference, GPU compute, and storage. Reference docs for each area load on demand from the skill's `references/` directory.
-- `skill-creator` - teaches the agent to create new skills: markdown skill layout, frontmatter rules, placement and precedence, and the full Python-backed skill contract (package layout, `run()` convention, optional CLI, kernel venv behavior) with a working template in `references/python-skills.md`.
+- `skill-creator` - teaches the agent to create new skills: markdown skill layout, frontmatter rules, placement and precedence, and the full TypeScript-backed skill contract (module layout, `deno.json` metadata, detection rules, import-failure behavior) with a working template in `references/iscript-skills.md`.
 - `websearch` - a TypeScript-backed web search and code-context skill via the [Exa](https://exa.ai) MCP integration.
 
 Built-in skills behave like any other skill but have the lowest precedence: a user, project, package, or `--skill` skill with the same name overrides the built-in one.
@@ -75,7 +75,7 @@ Once loaded, the model can call it directly in the TypeScript kernel — the
 default export is callable, and the named exports are auto-promoted to globals:
 
 ```ts
-print(await websearch("latest Prime Agent release"));
+console.log(await websearch("latest Apollo CLI release"));
 import { web_search, code_context } from "websearch";
 const results = await web_search("Deno 2.x workspaces", { num_results: 5 });
 ```
@@ -122,7 +122,7 @@ To use skills from Claude Code or OpenAI Codex, add their directories to setting
 }
 ```
 
-For project-level Claude Code skills, add to `.prime/agent/settings.json`:
+For project-level Claude Code skills, add to `.apollo/agent/settings.json`:
 
 ```json
 {
@@ -132,85 +132,74 @@ For project-level Claude Code skills, add to `.prime/agent/settings.json`:
 
 ## How Skills Work
 
-1. At startup, Prime Agent scans skill locations and extracts names, descriptions, type, and file locations
+1. At startup, Apollo CLI scans skill locations and extracts names, descriptions, type, and file locations
 2. The system prompt includes visible skills in XML format per the [specification](https://agentskills.io/integrate-skills)
-3. When a task matches, the agent uses `ipython` to load the full `SKILL.md` (models don't always do this; use prompting or `/skill:name` to force it)
+3. When a task matches, the agent uses `iscript` to load the full `SKILL.md` (models don't always do this; use prompting or `/skill:name` to force it)
 4. The agent follows the instructions, using relative paths to reference scripts and assets
 
 This is progressive disclosure: only descriptions are always in context, full instructions load on-demand.
 
 Skills with `disable-model-invocation: true` are hidden from the startup skill list. They can still be invoked explicitly with `/skill:name`.
 
-## Python-Backed Skills
+## TypeScript-Backed Skills
 
-A Python-backed skill uses the same `SKILL.md` metadata and invocation behavior as a markdown skill, but also provides a Python package for the Python kernel.
+A TypeScript-backed skill uses the same `SKILL.md` metadata and invocation behavior as a markdown skill, but also ships a TypeScript module for the IScript kernel.
 
 ```
 web-search/
 ├── SKILL.md
-├── pyproject.toml
+├── deno.json
 └── src/
+    ├── mod.ts
     └── web_search/
-        └── __init__.py
+        └── mod.ts
 ```
 
 Detection rules:
 - `SKILL.md` is still required
-- `pyproject.toml` marks the skill as Python-backed
-- the import name is the skill name with hyphens converted to underscores
-- `src/<import_name>/__init__.py` must exist
+- a `deno.json` at the skill root marks the skill as TypeScript-backed (a legacy `pyproject.toml` is still recognized)
+- the import name is the skill name with hyphens converted to underscores; it must be a valid identifier
+- the entrypoint is `src/<import_name>/mod.ts`, falling back to `src/mod.ts`
 
-For `web-search`, Prime Agent exposes `web_search` in the Python REPL. If the module defines `run()`, the module is wrapped as an async callable:
+The kernel pre-imports every installed TypeScript-backed skill at startup: the default export is callable and named exports are auto-promoted to globals, so for `web-search` the model can write:
 
-```python
-await web_search("prime agent skills")
-await web_search.run("prime agent skills")
-help(web_search)
+```ts
+await web_search("apollo cli skills")
 ```
 
-Python skills are installed editable into the kernel venv during kernel setup. By default this is `~/.prime/agent/kernel-venv`; set `PRIME_AGENT_KERNEL_VENV` to override it. If `pyproject.toml` changes, Prime Agent rebuilds the kernel venv so dependency changes are picked up.
-
-If you set `PRIME_AGENT_KERNEL_PYTHON`, Prime Agent does not install packages into that environment. The Python must already have a current `prime-agent-runtime` and the default runtime packages installed. Missing Python skill imports are disabled with a warning and calling the skill raises a `RuntimeError`.
+A skill whose entrypoint is missing or whose import fails degrades to its markdown instructions with a load warning; the bound name is a throwing placeholder tagged with the import error in its `__apollo_skill_unavailable__` property.
 
 ### Optional CLI Command
 
-A Python skill can expose a shell command by declaring a console script in `pyproject.toml`. The script name must exactly match the Python import name, including underscores:
+A TypeScript-backed skill is also available as a shell command under its name (run `<skill> --help` to discover usage). The runtime's `rlm/skill` module provides the `cli`/`runCli` helpers: they import the skill module, call its `run()` export (or default callable), parse CLI arguments into positional and `--option value` pairs, and print non-null results (objects as JSON):
 
-```toml
-[project]
-name = "web-search"
-version = "0.1.0"
-dependencies = ["requests"]
+```ts
+export interface SearchOptions {
+  limit?: number;
+}
 
-[project.scripts]
-web_search = "rlm.skill:cli"
+export async function run(query: string, options: SearchOptions = {}): Promise<string> {
+  // search the web and return a concise summary
+}
 ```
 
-The `rlm.skill:cli` helper imports `web_search.run`, parses CLI arguments with `tyro`, awaits async results, and prints non-`None` return values.
+The model can then call the skill from the IScript REPL or from shell mode:
 
-```python
-async def run(query: str, limit: int = 5) -> str:
-    """Search the web and return a concise summary."""
-    ...
+```ts
+await web_search("apollo cli skills")
+{ const __bang_res = await globalThis.bash("web-search "apollo cli skills" --limit 3"); if (__bang_res.output) { process.stdout.write(__bang_res.output); } globalThis._ = __bang_res; }
 ```
 
-The model can then call the skill from normal Python or from shell mode:
+## Creating Skills with Apollo CLI
 
-```python
-await web_search("prime agent")
-!web_search "prime agent" --limit 3
-```
-
-## Creating Skills with Prime Agent
-
-Prime Agent ships with a built-in `skill-creator` skill that teaches the agent both the Agent Skills format and the Python-backed package contract. You can ask for a skill in normal language:
+Apollo CLI ships with a built-in `skill-creator` skill that teaches the agent both the Agent Skills format and the TypeScript-backed package contract. You can ask for a skill in normal language:
 
 ```text
-Create a project Python-backed skill named release-audit in
-.prime/agent/skills/release-audit. It should expose
-await release_audit(repository, target_version), include concise SKILL.md
-instructions, declare its dependencies, and verify the callable in a fresh
-Prime Agent session.
+Create a project TypeScript-backed skill named release-audit in
+.apollo/agent/skills/release-audit. It should expose
+await release_audit(dir, { target_version }), include concise SKILL.md
+instructions, declare its dependencies, and verify the module imports in a
+fresh Apollo CLI session.
 ```
 
 To force the creation workflow explicitly, invoke the built-in skill command:
@@ -221,17 +210,17 @@ To force the creation workflow explicitly, invoke the built-in skill command:
 
 Tell the agent three things:
 
-1. **Scope:** use `.prime/agent/skills/<name>/` for a project skill committed with the repository, or `~/.prime/agent/skills/<name>/` for a personal skill.
-2. **Kind:** ask for a markdown skill when the capability is primarily instructions; ask for a Python-backed skill when the agent should call reusable functionality from the Python REPL.
-3. **Contract:** describe the intended Python call, inputs, output, dependencies, credentials, and verification behavior.
+1. **Scope:** use `.apollo/agent/skills/<name>/` for a project skill committed with the repository, or `~/.apollo/agent/skills/<name>/` for a personal skill.
+2. **Kind:** ask for a markdown skill when the capability is primarily instructions; ask for a TypeScript-backed skill when the agent should call reusable functionality from the IScript REPL.
+3. **Contract:** describe the intended call, inputs, output, dependencies, credentials, and verification behavior.
 
-The agent should create `SKILL.md` in both cases. For a Python-backed skill it should also create `pyproject.toml` and `src/<import_name>/__init__.py`, expose a documented callable, and verify that the package imports in the kernel.
+The agent should create `SKILL.md` in both cases. For a TypeScript-backed skill it should also create `deno.json` and `src/<import_name>/mod.ts`, export a documented callable, and verify that the module imports in the kernel.
 
-Use `/reload` to rediscover new or edited skill metadata. Start a fresh Prime Agent session after adding a Python-backed skill so kernel setup can install and import the package.
+Use `/reload` to rediscover new or edited skill metadata. Start a fresh Apollo CLI session after adding a TypeScript-backed skill so kernel setup can import the module.
 
 ### Installed Skills and Continual Harness Skills
 
-An installed Python-backed skill is a real package on disk that adds executable functionality to the kernel. A continual harness skill entry is a persisted description of a reusable Python call, including its reference and argument contract. `/refine` can create or update the latter after a repeated procedure emerges, but it does not replace packaging new functionality with `skill-creator`.
+An installed TypeScript-backed skill is a real module on disk that adds executable functionality to the kernel. A continual harness skill entry is a persisted description of a reusable call, including its reference and argument contract. `/refine` can create or update the latter after a repeated procedure emerges, but it does not replace packaging new functionality with `skill-creator`.
 
 ## Skill Commands
 
@@ -338,7 +327,7 @@ description: Helps with PDFs.
 
 ## Validation
 
-Prime Agent validates skills against the Agent Skills standard. Most issues produce warnings but still load the skill:
+Apollo CLI validates skills against the Agent Skills standard. Most issues produce warnings but still load the skill:
 
 - Name doesn't match parent directory
 - Name exceeds 64 characters or contains invalid characters

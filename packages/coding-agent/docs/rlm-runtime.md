@@ -1,37 +1,35 @@
 # RLM Runtime Architecture
 
-> **Fork note.** This page describes the Python kernel path, which is what installed releases run. A source checkout of this fork resolves to the TypeScript **IScript** runtime instead, and the two runtimes differ in snapshot format and — currently — in the `host_request` wire shape (P0). See [IScript Kernel](iscript-kernel.md) for the full picture and the open gaps.
-
-Prime Agent gives each agent session a persistent Python REPL kernel and a native recursive sub-agent interface. The Python `rlm` package is a model-facing shim; the TypeScript host owns child execution, persistence, usage accounting, and lifecycle.
+Apollo CLI gives each agent session a persistent IScript (TypeScript) REPL kernel and a native recursive sub-agent interface. The `rlm` module in `apollo-cli-runtime` is a model-facing shim; the TypeScript host owns child execution, persistence, usage accounting, and lifecycle. For the model-facing kernel reference, see [IScript Kernel](iscript-kernel.md).
 
 ## Architecture
 
 ```mermaid
 flowchart TD
-    session["AgentSession · TypeScript<br/>Python REPL tool + host request handlers"]
+    session["AgentSession · TypeScript<br/>IScript tool + host request handlers"]
     manager["ReplKernelManager · TypeScript<br/>execution + host-request dispatch"]
-    kernel["REPL runtime process · Python"]
-    runtime["prime-agent-runtime<br/>rlm module + Python skills"]
-    code["Model-executed Python code"]
+    kernel["REPL runtime process · IScript (TypeScript)"]
+    runtime["apollo-cli-runtime<br/>rlm module + TypeScript skills"]
+    code["Model-executed TypeScript/JavaScript code"]
 
     session -->|"owns"| manager
     manager <-->|"JSON lines over stdio"| kernel
     kernel --> runtime --> code
-    code -->|"rlm.run · goal.* · agent_message.*"| runtime
+    code -->|"rlm.spawn · goal.* · agent_message.*"| runtime
     runtime -->|"host_request events"| manager
     manager -->|"typed dispatch"| session
 ```
 
 When the model delegates work:
 
-```python
-handle = await rlm.spawn("inspect the API", name="api-reviewer")
-print(handle.rlm_child_id, handle.name, handle.session_dir, handle.model)
+```ts
+const handle = await rlm.spawn("inspect the API", "api-reviewer")
+console.log(handle.rlm_child_id, handle.name, handle.session_dir, handle.model)
 ```
 
-the call travels as a `host_request` event over the runtime's stdio protocol. `ReplKernelManager` dispatches request type `rlm.run` to the parent `AgentSession`, which starts a child through the same TypeScript agent machinery as the parent. The call returns over the same bridge immediately after task admission with a child handle; it never waits for or returns the child's answer. Results arrive only through explicit `agent_message` replies or files.
+the call travels as a `host_request` event over the runtime's stdio protocol. `ReplKernelManager` dispatches the request to the parent `AgentSession`, which starts a child through the same TypeScript agent machinery as the parent. The call returns over the same bridge immediately after task admission with a child handle; it never waits for or returns the child's answer. Results arrive only through explicit `agent_message` replies or files.
 
-The same bridge supports other typed host requests. Bundled Python skills such as `goal` call `rlm.host_request("goal.get", ...)`; state and policy remain in the TypeScript host.
+The same bridge supports other typed host requests. Bundled TypeScript skills such as `goal` call `rlm.host_request("goal.get", ...)`; state and policy remain in the TypeScript host.
 
 ## Delegation Flow
 
@@ -39,18 +37,18 @@ The same bridge supports other typed host requests. Bundled Python skills such a
 sequenceDiagram
     participant M as Parent model
     participant H as Parent AgentSession
-    participant K as Python kernel
+    participant K as IScript kernel
     participant C as Child AgentSession
     participant P as Model provider
 
-    M->>H: Python tool call
-    H->>K: execute await rlm.spawn("inspect the API", name="api-reviewer")
-    K->>H: host_request · rlm.run
+    M->>H: iscript tool call
+    H->>K: execute await rlm.spawn("inspect the API", "api-reviewer")
+    K->>H: host_request event
     H->>H: check depth and resolve model
     H->>H: admit child task and update registry
     H-->>K: RLMSpawnHandle
     K-->>H: tool output
-    H-->>M: Python result
+    H-->>M: tool result
     H->>C: create child runtime and prompt
     loop Child agent loop
         C->>P: stream model request
@@ -66,26 +64,25 @@ sequenceDiagram
 | Component | Responsibility |
 |---|---|
 | `src/core/kernel/repl-manager.ts` | Runtime process, stdio protocol, execution, host-request dispatch, interrupt, and shutdown. |
-| `src/core/tools/ipython.ts` | Agent tool wrapper, lazy kernel provisioning, namespace bootstrap, and output shaping. |
+| `src/core/tools/iscript.ts` | Agent tool wrapper, lazy kernel provisioning, namespace bootstrap, and output shaping. `src/core/tools/ipython.ts` is a re-export alias that shares the same kernel. |
 | `src/core/agent-session.ts` | RLM policy, child creation, registry, usage attribution, cancellation, and goal handlers. |
 | `src/core/rlm-runtime.ts` | Typed request/spawn-handle validation for `rlm.spawn`, model discovery, list, and delete. |
-| `prime-agent-runtime/src/rlm/` | Python shim, handle types, the `rlm` namespace object, and session-backed harness state. |
+| `apollo-cli-runtime/src/rlm/` | Kernel loop, the `rlm` namespace object and handle types, host-bridge helpers, and session-backed harness state. |
 
-The Python side does not call providers or implement an agent loop.
+The runtime side does not call providers or implement an agent loop.
 
 ## Kernel Lifecycle
 
-The kernel is created lazily on first Python REPL use. Python resolution is:
+The kernel is created lazily on first IScript use. The runtime entrypoint is `apollo-cli-runtime/src/rlm/mod.ts`, resolved from the package directory (a source checkout or an installed release). Interpreter resolution is:
 
-1. `PRIME_AGENT_KERNEL_PYTHON`, when it has a current `prime-agent-runtime`;
-2. `~/.prime/agent/kernel-venv/bin/python`, bootstrapped with `uv`; or
-3. the XDG data location when `~/.prime` is not writable.
+1. `APOLLO_KERNEL_DENO`, when set to a Deno binary; or
+2. the host Node runtime via `node --experimental-strip-types`.
 
-The managed environment includes Python 3.11, `prime-agent-runtime`, `dill`, and the default Python packages. A bootstrap marker detects stale environments.
+With a Deno interpreter the process is `deno run -A --unstable-kv --unstable-node-globals <mod.ts>`; with Node it is `node --experimental-strip-types <mod.ts>`. If the runtime cannot be resolved, kernel startup fails with a clear error.
 
-Startup spawns `python -m rlm.repl` and exchanges newline-delimited JSON over stdio: the runtime announces itself with a single `ready` event, then requests and events flow one JSON object per line (see `prime-agent-runtime/src/rlm/repl.md`).
+Startup is a single `ready` event announcing the runtime, then requests and events flow one JSON object per line over stdio (see `apollo-cli-runtime/src/rlm/repl.ts`).
 
-The manager owns the child process and a bounded stderr tail. Shutdown sends a `shutdown` request, waits for the process to exit, and terminates it as a fallback. Persistent sessions may snapshot the kernel namespace into their session artifact directory for revival.
+The manager owns the child process and a bounded stderr tail. Shutdown sends a `shutdown` request, waits for the process to exit, and terminates it as a fallback. Persistent sessions snapshot the kernel namespace into their session artifact directory for revival on resume.
 
 ## Stdio Transport
 
@@ -96,37 +93,32 @@ requests  execute, interrupt, host_reply, snapshot, restore, list_names, shutdow
 events    ready, stdout, stderr, result, display, host_request, error, done
 ```
 
-Output events carry the id of the cell that was running when the bytes were produced; asyncio tasks keep their spawning cell's id even after that cell finishes, so detached work is attributed correctly.
+Output events carry the id of the cell that was running when the bytes were produced; detached promises keep their spawning cell's id even after that cell finishes, so background work is attributed correctly.
 
-Calls to `ReplKernelManager.execute()` are serialized. One kernel has one shared namespace and does not run two ordinary Python cells concurrently. RLM child agents can still run concurrently because each delegation uses a distinct host request and child runtime.
+Calls to `ReplKernelManager.execute()` are serialized. One kernel has one shared namespace (the process's `globalThis`, cells run through `node:vm`) and does not run two ordinary cells concurrently. RLM child agents can still run concurrently because each delegation uses a distinct host request and child runtime.
 
 ## Host-Request Event Flow
 
 A running cell can await task admission:
 
-```python
-handle = await rlm.spawn("subtask", name="worker")
+```ts
+const handle = await rlm.spawn("subtask", "worker")
 ```
 
-The runtime ships the call to the host as a `host_request` event and keeps its event loop free while awaiting the reply. The host dispatches the typed request and answers with a `host_reply` request carrying the same id, so a cell can block on admission without stalling other runtime work. Child answers do not use this response path; they arrive later through explicit `agent_message` replies or files.
+The runtime ships the call to the host as a `host_request` event — the wire shape is `{ id, event: "host_request", data }` — and keeps its event loop free while awaiting the reply. The host dispatches the typed request and answers with a `host_reply` request carrying the same id, so a cell can block on admission without stalling other runtime work. Child answers do not use this response path; they arrive later through explicit `agent_message` replies or files.
 
-## Python API
+## IScript API
 
-`prime-agent-runtime` exports:
+The kernel exposes the `rlm` namespace in the user namespace:
 
-```python
-rlm
-spawn(prompt: str, *, name: str, model: str | None = None, thinking: str | None = None)
-find_models(query: str = "", limit: int = 8)
-list_subagents()
-delete_subagent(selector)
-host_request(request_type: str, payload: dict | None = None)
-RLMSpawnHandle
-RLMModel
-RLMSubagent
+```text
+rlm.spawn, rlm.create_session, rlm.find_models, rlm.list_subagents,
+rlm.collect, rlm.delete_subagent, rlm.progress_note, rlm.view,
+rlm.host_request, rlm.emit, rlm.bash, rlm.mcp, rlm.harness,
+rlm.get_harness_state
 ```
 
-The kernel bootstrap places the `rlm` object in the user namespace, so a cell calls `await rlm.spawn("subtask", name="worker")`. The `rlm` object itself is not callable, and the old `rlm.run` attribute is gone; both raise an error naming `rlm.spawn`.
+A cell calls `await rlm.spawn("subtask", "worker")`. The `rlm` object itself is not callable, and the legacy `rlm.run` attribute was renamed to `rlm.spawn`; calling it raises an error pointing at `rlm.spawn`.
 
 `RLMSpawnHandle` contains `rlm_child_id`, `name`, `session_dir`, and `model`. It confirms admission only and never contains the child's answer.
 
@@ -156,13 +148,13 @@ Children receive incremented `RLM_DEPTH`, the inherited maximum depth, and their
 
 Each direct call admits an independent child and returns its handle immediately:
 
-```python
-api_review = await rlm.spawn("review the API", name="api-reviewer")
-test_review = await rlm.spawn("review the tests", name="test-reviewer")
-audit = await rlm.spawn("slow independent audit", name="audit-reviewer")
+```ts
+const api_review = await rlm.spawn("review the API", "api-reviewer")
+const test_review = await rlm.spawn("review the tests", "test-reviewer")
+const audit = await rlm.spawn("slow independent audit", "audit-reviewer")
 ```
 
-End the turn instead of waiting for completion. Children send requested answers with `await agent_message.send(message, receiver_role="parent")`, and replies arrive as ordinary agent messages over later turns. A child may instead write results to files for the parent to read. The host runs each admitted child as an independent `AgentSession`; daemon-backed children can be retained as independently addressable session workers.
+End the turn instead of waiting for completion. Children send requested answers with `await agent_message.send(message, { receiver_role: "parent" })`, and replies arrive as ordinary agent messages over later turns. A child may instead write results to files for the parent to read. The host runs each admitted child as an independent `AgentSession`; daemon-backed children can be retained as independently addressable session workers.
 
 ## Parent-Scoped Sub-Agent Registry
 
@@ -170,13 +162,13 @@ The TypeScript parent maintains the authoritative direct-child registry. `await 
 
 This registry survives kernel restart, compaction, and parent restore. Successfully completed daemon-backed children are rehydrated from the parent artifact registry. Inline children remain inspectable in the current process but have no active-session ID.
 
-The parent can continue a retained daemon child with `await agent_message.send(..., receiver_role="child", receiver_name=child.session_name)`. `rlm.delete_subagent()` accepts an exact child ID, active-session ID, session ID, or unique name. Deletion cancels or closes the runtime, writes a durable tombstone, and removes the child from messaging and observation. It does not erase the transcript or artifacts on disk.
+The parent can continue a retained daemon child with `await agent_message.send(message, { receiver_role: "child", receiver_name: child.session_name })`. `rlm.delete_subagent()` accepts an exact child ID, active-session ID, session ID, or unique name. Deletion cancels or closes the runtime, writes a durable tombstone, and removes the child from messaging and observation. It does not erase the transcript or artifacts on disk.
 
 Registry scope follows the parent transcript. An unrelated new parent session does not inherit children.
 
 ## Usage and Cost Attribution
 
-The admission handle does not contain usage or completion data. Prime Agent asynchronously folds the child's assistant usage and cost into the parent assistant turn that launched it.
+The admission handle does not contain usage or completion data. Apollo CLI asynchronously folds the child's assistant usage and cost into the parent assistant turn that launched it.
 
 The parent transcript persists a `child_usage_attributed` entry containing:
 
@@ -190,17 +182,17 @@ On reload, the aggregate is reapplied to the parent message. Context-tree report
 
 `rlm.harness` is a persisted state ledger for prompt notes, memories, reusable skill descriptions, sub-agent specifications, and refinement events. It is not a second execution engine.
 
-Session-local state lives in the session artifact directory under `harness/harness_state.json`. Explicitly global entries live under `~/.prime/agent/harness/`. The Python store reloads after external modification so host-side `/refine` writes and kernel writes do not overwrite each other.
+Session-local state lives in the session artifact directory under `harness/harness_state.json`. Explicitly global entries live under `~/.apollo/agent/harness/`. The store reloads after external modification so host-side `/refine` writes and kernel writes do not overwrite each other.
 
 `/refine` runs a dedicated review over the current trajectory and applies small create/update/delete edits. Rollback uses recorded before/after snapshots. The base system prompt remains immutable; refinements are supplemental state.
 
 ## Goal Requests
 
-The bundled `goal` Python skill is a thin host-bridge client:
+The bundled `goal` TypeScript skill is a thin host-bridge client:
 
-```python
+```ts
 await goal.get()
-await goal.create("ship the release", token_budget=200000)
+await goal.create("ship the release", 200000)
 await goal.complete()
 ```
 
@@ -211,13 +203,13 @@ Goal state, persistence, token and wall-clock accounting, and continuation promp
 For a persisted root session, the relevant layout is:
 
 ```text
-~/.prime/agent/
+~/.apollo/agent/
   sessions/
     <root-session-id>.jsonl
   session-artifacts/
     <root-session-id>/
-      kernel-state.dill
-      kernel-state.json
+      kernel-state.snap        # v8 snapshot of the kernel namespace
+      kernel-state.json        # snapshot manifest
       scheduled-jobs.json
       harness/
         harness_state.json
@@ -230,19 +222,19 @@ Exact artifact files are created only when their features are used. Non-persiste
 
 ## Trust Boundary
 
-The REPL runtime process executes model-generated Python and `bash()` commands with the worker's OS permissions. The process boundary isolates protocol and lifecycle concerns; it is not a security sandbox. Installed Python packages, skills, and extensions are trusted code. Use an external sandbox or restricted execution environment when the workspace or generated code is untrusted.
+The IScript kernel runs model-generated TypeScript/JavaScript code and project commands with the worker's OS permissions. The process boundary isolates protocol and lifecycle concerns; it is not a security sandbox. Installed TypeScript skills and extensions are trusted code. Use an external sandbox or restricted execution environment when the workspace or generated code is untrusted.
 
-Provider credentials are resolved by the TypeScript host. The bounded model catalog crosses into Python as metadata; the full auth store does not.
+Provider credentials are resolved by the TypeScript host. The bounded model catalog crosses into the kernel as metadata; the full auth store does not.
 
 ## Failure Modes
 
 | Failure | Behavior |
 |---|---|
-| Managed runtime is missing | Kernel bootstrap rebuilds it; a custom `PRIME_AGENT_KERNEL_PYTHON` without a current `prime-agent-runtime` is rejected at kernel startup. |
-| Depth limit reached | The host rejects the spawn request; the error reply raises in Python. |
+| Runtime cannot be resolved | Kernel startup fails with a clear error pointing at `apollo-cli-runtime`. |
+| Depth limit reached | The host rejects the spawn request; the error reply rejects the spawn call in the kernel. |
 | Unsupported options | Host rejects the request. |
 | Requested model unavailable | Spawn fails instead of substituting another model. |
-| Host connection closed | Pending `host_request` calls fail with `RuntimeError` so awaiting cells unblock. |
+| Host connection closed | Pending `host_request` calls reject with `host connection closed; host_request cannot be answered` so awaiting cells unblock. |
 | Child cancellation | Host aborts the child and removes failed/cancelled registry entries. |
 | Parent teardown | Active descendants are cancelled and their runtimes are closed. |
 
