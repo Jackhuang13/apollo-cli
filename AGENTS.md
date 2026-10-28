@@ -95,29 +95,29 @@ When closing issues via commit:
 - If the user approves: create a feature branch, pull PR, rebase on main, apply adjustments, commit, merge into main, push, close PR, and leave a comment in the user's tone
 - We work in feature branches until everything is according to the user's requirements. Never merge PRs by yourself.
 
-## Testing Prime Agent Interactive Mode with tmux
+## Testing Apollo CLI Interactive Mode with tmux
 
-To test Prime Agent's TUI in a controlled terminal environment:
+To test Apollo CLI's TUI in a controlled terminal environment:
 
 ```bash
 # Create tmux session with specific dimensions
-tmux new-session -d -s prime-agent-test -x 80 -y 24
+tmux new-session -d -s apollo-cli-test -x 80 -y 24
 
-# Start Prime Agent from source
-tmux send-keys -t prime-agent-test "cd /Users/kevin/pi/prime-agent && ./prime-agent.sh" Enter
+# Start Apollo CLI from source
+tmux send-keys -t apollo-cli-test "cd /Users/kevin/pi/apollo-cli && ./apollo-cli.sh" Enter
 
 # Wait for startup, then capture output
-sleep 3 && tmux capture-pane -t prime-agent-test -p
+sleep 3 && tmux capture-pane -t apollo-cli-test -p
 
 # Send input
-tmux send-keys -t prime-agent-test "your prompt here" Enter
+tmux send-keys -t apollo-cli-test "your prompt here" Enter
 
 # Send special keys
-tmux send-keys -t prime-agent-test Escape
-tmux send-keys -t prime-agent-test C-o  # ctrl+o
+tmux send-keys -t apollo-cli-test Escape
+tmux send-keys -t apollo-cli-test C-o  # ctrl+o
 
 # Cleanup
-tmux kill-session -t prime-agent-test
+tmux kill-session -t apollo-cli-test
 ```
 
 You, yourself, are often running into a tmux session, so be careful when killing tmux sessions. Lots of other processes can be running on different tmux sessions/

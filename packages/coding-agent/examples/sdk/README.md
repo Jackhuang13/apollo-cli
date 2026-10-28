@@ -1,6 +1,6 @@
 # SDK Examples
 
-Programmatic usage of the Prime Agent SDK via `createAgentSession()` and `createAgentSessionRuntime()`.
+Programmatic usage of the Apollo CLI SDK via `createAgentSession()` and `createAgentSessionRuntime()`.
 
 The published TypeScript packages still use inherited `@earendil-works/pi-*`
 identifiers. Those identifiers are API names, not a dependency on the upstream
@@ -65,7 +65,7 @@ await loader.reload();
 const { session } = await createAgentSession({ resourceLoader: loader, authStorage, modelRegistry });
 
 // Tool selection
-const { session } = await createAgentSession({ tools: ["ipython"], authStorage, modelRegistry });
+const { session } = await createAgentSession({ tools: ["iscript"], authStorage, modelRegistry });
 
 // In-memory
 const { session } = await createAgentSession({
@@ -93,7 +93,7 @@ const { session } = await createAgentSession({
   authStorage: customAuth,
   modelRegistry: customRegistry,
   resourceLoader,
-  tools: ["ipython"],
+  tools: ["iscript"],
   customTools: [{ tool: myTool }],
   sessionManager: SessionManager.inMemory(),
   settingsManager: SettingsManager.inMemory(),
@@ -115,10 +115,10 @@ await session.prompt("Hello");
 | `authStorage` | `AuthStorage.create()` | Credential storage |
 | `modelRegistry` | `ModelRegistry.create(authStorage)` | Model registry |
 | `cwd` | `process.cwd()` | Working directory |
-| `agentDir` | `~/.prime/agent` | Config directory |
+| `agentDir` | `~/.apollo/agent` | Config directory |
 | `model` | From settings/first available | Model to use |
 | `thinkingLevel` | From settings/"off" | off, low, medium, high |
-| `tools` | `["ipython"]` | Built-in tools |
+| `tools` | `["iscript"]` | Built-in tools |
 | `customTools` | `[]` | Additional tool definitions |
 | `resourceLoader` | DefaultResourceLoader | Resource loader for extensions, skills, prompts, themes |
 | `sessionManager` | `SessionManager.create(cwd)` | Persistence |

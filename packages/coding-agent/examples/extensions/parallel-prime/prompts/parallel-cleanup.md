@@ -2,7 +2,7 @@
 description: Parallel rlm cleanup review (deslop + verbosity)
 argument-hint: "[autofix] [scope or focus]"
 ---
-<!-- Source: adapted from pi-subagents (MIT, nicopreme) prompts/parallel-cleanup.md; delegation rewritten for Prime Agent native rlm.spawn. -->
+<!-- Source: adapted from pi-subagents (MIT, nicopreme) prompts/parallel-cleanup.md; delegation rewritten for Apollo CLI native rlm.spawn. -->
 
 對目前工作做 fresh context 並行清理 review。你(父 session)是仲裁者與最終決定者。
 Reviewer 以 fresh context 執行:沒有你的對話史,因此每份 brief 必須自含。

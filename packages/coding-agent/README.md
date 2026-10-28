@@ -7,13 +7,13 @@
   </a>
 </p>
 
-<h1 align="center">Prime Agent CLI</h1>
+<h1 align="center">Apollo CLI</h1>
 
 <p align="center">
   RLM-native terminal coding and research harness.
 </p>
 
-Prime Agent began as a hard fork of [pi-mono](https://github.com/badlogic/pi-mono), but it is now developed and distributed independently. This workspace retains inherited `@earendil-works/pi-*` source package identifiers, the `pi` package manifest key, and a source-package `pi` bin entry for internal compatibility. Public releases are currently versioned tarball artifacts installed by the scripts below; release packaging rewrites the application package and command to `prime-agent`. Do not use the inherited npm package as the Prime Agent install path.
+Apollo CLI began as a hard fork of [pi-mono](https://github.com/badlogic/pi-mono), but it is now developed and distributed independently. This workspace retains inherited `@earendil-works/pi-*` source package identifiers, the `pi` package manifest key, and a source-package `pi` bin entry for internal compatibility. Public releases are currently versioned tarball artifacts; release packaging rewrites the application package and command to `apollo-cli`. Do not use the inherited npm package as the Apollo CLI install path.
 
 ## Table of Contents
 
@@ -35,46 +35,45 @@ Prime Agent began as a hard fork of [pi-mono](https://github.com/badlogic/pi-mon
   - [MCP Integrations](#mcp-integrations)
   - [Extensions](#extensions)
   - [Themes](#themes)
-  - [Prime Agent Packages](#prime-agent-packages)
+  - [Apollo CLI Packages](#apollo-cli-packages)
 - [Programmatic Usage](#programmatic-usage)
 - [Upstream](#upstream)
 - [CLI Reference](#cli-reference)
 
 ## Quick Start
 
-```bash
-curl -fsSL https://app.primeintellect.ai/prime-agent/install.sh | sh
-```
-
-To install the beta built from the latest commit on `main`:
+Run from source (Node.js 22.8.0 or newer):
 
 ```bash
-curl -fsSL https://app.primeintellect.ai/prime-agent/install.sh | sh -s -- beta
+git clone https://github.com/Jackhuang13/apollo-cli
+cd apollo-cli
+npm ci
+./apollo-cli.sh
 ```
 
 Authenticate with an API key:
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-prime-agent
+apollo-cli
 ```
 
 Or use your existing subscription:
 
 ```bash
-prime-agent
+apollo-cli
 /login  # Then select provider
 ```
 
-Then just talk to Prime Agent. By default, Prime Agent gives the model one tool: `ipython`. The model uses the persistent kernel to read files, run commands, edit code, and inspect data. Add capabilities via [skills](#skills), [prompt templates](#prompt-templates), [extensions](#extensions), or [Prime Agent packages](#prime-agent-packages).
+Then just talk to Apollo CLI. By default, Apollo CLI gives the model one tool: `iscript` (`ipython` remains an alias). The model uses the persistent IScript (TypeScript) REPL kernel to read files, run commands, edit code, and inspect data. Add capabilities via [skills](#skills), [prompt templates](#prompt-templates), [extensions](#extensions), or [Apollo CLI packages](#apollo-cli-packages).
 
-The Python kernel runtime is set up automatically on first invocation. Set `PRIME_AGENT_KERNEL_PYTHON` to use an existing Python environment with `prime-agent-runtime`.
+The IScript kernel ships with the release and runs on the host Node.js runtime. Set `APOLLO_KERNEL_DENO` to run the kernel with a Deno binary instead.
 
 **Platform notes:** [Windows](docs/windows.md) | [Termux (Android)](docs/termux.md) | [tmux](docs/tmux.md) | [Terminal setup](docs/terminal-setup.md) | [Shell aliases](docs/shell-aliases.md)
 
 ## Providers & Models
 
-For each built-in provider, Prime Agent maintains a list of tool-capable models, updated with every release. Authenticate via subscription (`/login`) or API key, then select any model from that provider via `/model` (or Ctrl+L).
+For each built-in provider, Apollo CLI maintains a list of tool-capable models, updated with every release. Authenticate via subscription (`/login`) or API key, then select any model from that provider via `/model` (or Ctrl+L).
 
 Development checkouts do not commit the generated bundled catalog snapshots. Before running catalog-dependent tests in a fresh checkout, generate them once from the catalog repo:
 
@@ -127,11 +126,11 @@ Select the xAI subscription entry in `/login` to sign in. Model access depends o
 - Xiaomi MiMo Token Plan (Amsterdam)
 - Xiaomi MiMo Token Plan (Singapore)
 
-Prime Inference credentials and teams belong to Agent's `~/.prime/agent/auth.json`. Normal use ignores Prime CLI's `~/.prime/config.json`. If you previously relied on CLI credentials, run `/login` once: Agent can import a production-compatible CLI key after production validation, without changing CLI config. `PRIME_API_KEY` still overrides the saved Agent key.
+Prime Inference credentials and teams belong to Apollo CLI's `~/.apollo/agent/auth.json`. Normal use ignores Prime CLI's `~/.prime/config.json`. If you previously relied on CLI credentials, run `/login` once: Agent can import a production-compatible CLI key after production validation, without changing CLI config. `PRIME_API_KEY` still overrides the saved Agent key.
 
 See [docs/providers.md](docs/providers.md) for detailed setup instructions.
 
-**Custom providers & models:** Add providers via `~/.prime/agent/models.json` if they speak a supported API (OpenAI, Anthropic, Google). For custom APIs or OAuth, use extensions. See [docs/models.md](docs/models.md) and [docs/custom-provider.md](docs/custom-provider.md).
+**Custom providers & models:** Add providers via `~/.apollo/agent/models.json` if they speak a supported API (OpenAI, Anthropic, Google). For custom APIs or OAuth, use extensions. See [docs/models.md](docs/models.md) and [docs/custom-provider.md](docs/custom-provider.md).
 
 ## Interactive Mode
 
@@ -187,13 +186,13 @@ Type `/` in the editor to trigger commands. [Extensions](#extensions) can regist
 | `/reload` | Reload keybindings, extensions, skills, prompts, and context files (themes hot-reload automatically) |
 | `/hotkeys` | Show all keyboard shortcuts |
 | `/changelog` | Display version history |
-| `/quit` | Quit Prime Agent |
+| `/quit` | Quit Apollo CLI |
 
 Trace uploads use environment or Agent-owned credentials, not live Prime CLI credentials. `/traces login` can reuse a CLI key only after production URL and scope validation. See [trace sharing credentials](docs/providers.md#trace-sharing-credentials).
 
 ### Keyboard Shortcuts
 
-See `/hotkeys` for the full list. Customize via `~/.prime/agent/keybindings.json`. See [docs/keybindings.md](docs/keybindings.md).
+See `/hotkeys` for the full list. Customize via `~/.apollo/agent/keybindings.json`. See [docs/keybindings.md](docs/keybindings.md).
 
 **Commonly used:**
 
@@ -219,7 +218,7 @@ Submit messages while the agent is working:
 - While browsing, **Enter** applies the edit as steering input and **Alt+Enter** applies it as a follow-up; submitting an empty edit deletes the item
 - **Ctrl+Alt+Up / Ctrl+Alt+Down** move the selected item earlier or later within its queue
 
-On Windows Terminal, `Alt+Enter` is fullscreen by default. Remap it in [docs/terminal-setup.md](docs/terminal-setup.md) so Prime Agent can receive the follow-up shortcut.
+On Windows Terminal, `Alt+Enter` is fullscreen by default. Remap it in [docs/terminal-setup.md](docs/terminal-setup.md) so Apollo CLI can receive the follow-up shortcut.
 
 Configure delivery in [settings](docs/settings.md): `steeringMode` and `followUpMode` can be `"one-at-a-time"` (default, waits for response) or `"all"` (delivers all queued at once). `transport` selects provider transport preference (`"sse"`, `"websocket"`, or `"auto"`) for providers that support multiple transports.
 
@@ -229,13 +228,13 @@ Sessions are stored as JSONL files with a tree structure. Each entry has an `id`
 
 ### Management
 
-Sessions auto-save as flat JSONL files under `~/.prime/agent/sessions/`. Each session header records its working directory, which the searchable session view uses to identify and open saved sessions.
+Sessions auto-save as flat JSONL files under `~/.apollo/agent/sessions/`. Each session header records its working directory, which the searchable session view uses to identify and open saved sessions.
 
 ```bash
-prime-agent -c                  # Continue most recent session
-prime-agent -r [path|id]        # Browse past sessions or resume one directly
-prime-agent --no-session        # Ephemeral mode (don't save)
-prime-agent --fork <path|id>    # Fork specific session file or ID into a new session
+apollo-cli -c                   # Continue most recent session
+apollo-cli -r [path|id]         # Browse past sessions or resume one directly
+apollo-cli --no-session         # Ephemeral mode (don't save)
+apollo-cli --fork <path|id>     # Fork specific session file or ID into a new session
 ```
 
 Use `/session` in interactive mode to see the current session ID before reusing it with `--resume <id>` or `--fork <id>`.
@@ -272,21 +271,21 @@ Use `/settings` to modify common options, or edit JSON files directly:
 
 | Location | Scope |
 |----------|-------|
-| `~/.prime/agent/settings.json` | Global (all projects) |
-| `.prime/agent/settings.json` | Project (overrides global) |
+| `~/.apollo/agent/settings.json` | Global (all projects) |
+| `.apollo/agent/settings.json` | Project (overrides global) |
 
 See [docs/settings.md](docs/settings.md) for all options.
 
 ### Update checks
 
-Prime Agent stable builds fetch `https://pub-728493de92a943e2a9b2d17b4719f318.r2.dev/latest.json` to check whether a newer version exists. Beta builds fetch `beta.json` and remain on the beta channel. Override the base URL with `PRIME_AGENT_DOWNLOAD_BASE_URL`. Disable version checks with `PI_SKIP_VERSION_CHECK=1`.
+Apollo CLI stable builds fetch `https://pub-728493de92a943e2a9b2d17b4719f318.r2.dev/latest.json` to check whether a newer version exists. Beta builds fetch `beta.json` and remain on the beta channel. Override the base URL with `PRIME_AGENT_DOWNLOAD_BASE_URL`. Disable version checks with `PI_SKIP_VERSION_CHECK=1`.
 
 Use `--offline` or `PI_OFFLINE=1` to disable startup network operations, including update checks and package update checks.
 
 ## Context Files
 
-Prime Agent loads `AGENTS.md` (or `CLAUDE.md`) at startup from:
-- `~/.prime/agent/AGENTS.md` (global)
+Apollo CLI loads `AGENTS.md` (or `CLAUDE.md`) at startup from:
+- `~/.apollo/agent/AGENTS.md` (global)
 - Parent directories (walking up from cwd)
 - Current directory
 
@@ -296,7 +295,7 @@ Disable context file loading with `--no-context-files` (or `-nc`).
 
 ### System Prompt
 
-Replace the default system prompt with `.prime/agent/SYSTEM.md` (project) or `~/.prime/agent/SYSTEM.md` (global). Append without replacing via `APPEND_SYSTEM.md`.
+Replace the default system prompt with `.apollo/agent/SYSTEM.md` (project) or `~/.apollo/agent/SYSTEM.md` (global). Append without replacing via `APPEND_SYSTEM.md`.
 
 ## Customization
 
@@ -305,19 +304,19 @@ Replace the default system prompt with `.prime/agent/SYSTEM.md` (project) or `~/
 Reusable prompts as Markdown files. Type `/name` to expand.
 
 ```markdown
-<!-- ~/.prime/agent/prompts/review.md -->
+<!-- ~/.apollo/agent/prompts/review.md -->
 Review this code for bugs, security issues, and performance problems.
 Focus on: {{focus}}
 ```
 
-Place in `~/.prime/agent/prompts/`, `.prime/agent/prompts/`, or a [Prime Agent package](#prime-agent-packages) to share with others. See [docs/prompt-templates.md](docs/prompt-templates.md).
+Place in `~/.apollo/agent/prompts/`, `.apollo/agent/prompts/`, or an [Apollo CLI package](#apollo-cli-packages) to share with others. See [docs/prompt-templates.md](docs/prompt-templates.md).
 
 ### Skills
 
-On-demand capability packages following the [Agent Skills standard](https://agentskills.io). At startup, Prime Agent gives the model each visible skill's name, type, description, and location. The full `SKILL.md` stays out of context until the model inspects it with `ipython` or you explicitly invoke `/skill:name`.
+On-demand capability packages following the [Agent Skills standard](https://agentskills.io). At startup, Apollo CLI gives the model each visible skill's name, type, description, and location. The full `SKILL.md` stays out of context until the model inspects it with `iscript` or you explicitly invoke `/skill:name`.
 
 ```markdown
-<!-- ~/.prime/agent/skills/my-skill/SKILL.md -->
+<!-- ~/.apollo/agent/skills/my-skill/SKILL.md -->
 ---
 name: my-skill
 description: Use this skill when the user asks about X.
@@ -330,23 +329,22 @@ description: Use this skill when the user asks about X.
 2. Then that
 ```
 
-Skills can also be Python-backed. A Python skill is a normal skill directory with `SKILL.md` plus a Python package at `src/<import_name>/`. Prime Agent installs it into the persistent Python kernel and exposes it by import name, so the model can call it directly, inspect it with `help()`, or use any console scripts the skill declares.
+Skills can also be TypeScript-backed. A TypeScript skill is a normal skill directory with `SKILL.md` plus a `deno.json` and a module at `src/<import_name>/mod.ts`. Apollo CLI exposes it by import name in the persistent IScript (TypeScript) REPL, so the model can import it and call it directly.
 
-Place in `~/.prime/agent/skills/`, `~/.agents/skills/`, `.prime/agent/skills/`, or `.agents/skills/` (from `cwd` up through parent directories) or a [Prime Agent package](#prime-agent-packages) to share with others. See [docs/skills.md](docs/skills.md).
+Place in `~/.apollo/agent/skills/`, `~/.agents/skills/`, `.apollo/agent/skills/`, or `.agents/skills/` (from `cwd` up through parent directories) or an [Apollo CLI package](#apollo-cli-packages) to share with others. See [docs/skills.md](docs/skills.md).
 
-Prime Agent ships with a built-in `websearch` skill (web search and code context via the [Exa](https://exa.ai) MCP integration). It loads by default and needs an `exa` MCP server declared under `mcpServers` in settings (see [docs/skills.md#websearch](docs/skills.md#websearch)). The kernel global is directly callable (`await websearch("query")`), with named exports `web_search` and `code_context`. Disable it with `bundledSkills.websearch: false`, or override it with your own `websearch` skill in any location above. See [docs/skills.md#built-in-skills](docs/skills.md#built-in-skills).
+Apollo CLI ships with a built-in `websearch` skill (web search and code context via the [Exa](https://exa.ai) MCP integration). It loads by default and needs an `exa` MCP server declared under `mcpServers` in settings (see [docs/skills.md#websearch](docs/skills.md#websearch)). The kernel global is directly callable (`await websearch("query")`), with named exports `web_search` and `code_context`. Disable it with `bundledSkills.websearch: false`, or override it with your own `websearch` skill in any location above. See [docs/skills.md#built-in-skills](docs/skills.md#built-in-skills).
 
 ### MCP Integrations
 
-Connect external services (Linear, Notion, …) over the [Model Context Protocol](https://modelcontextprotocol.io). Consistent with the single-tool design, MCP is **not** exposed as new agent tools — each integration is a Python skill package the model imports and calls from the kernel:
+Connect external services (Linear, Notion, …) over the [Model Context Protocol](https://modelcontextprotocol.io). Consistent with the single-tool design, MCP is **not** exposed as new agent tools — every service is reached through the one generic `mcp` module pre-imported in the IScript (TypeScript) REPL:
 
-```python
-import linear
-issues = await linear.list_issues(team="Engineering")   # tools auto-discovered from the server
-help(linear.list_issues)                                 # description + argument schema
+```ts
+const tools = await mcp.list_tools("linear")             // tools auto-discovered from the server
+const issues = await mcp.call_tool("linear", "list_issues", { team: "Engineering" })
 ```
 
-Built-in integrations for Linear and Notion ship disabled. **Logging in enables them**: open `/login`, switch to **MCP Connections**, pick the integration, and complete OAuth in the browser. The integration's skill then becomes visible and is auto-imported into the kernel. `/mcp` opens the same tab, while its subcommands support direct management:
+Built-in integrations for Linear and Notion ship disabled. **Logging in enables them**: open `/login`, switch to **MCP Connections**, pick the integration, and complete OAuth in the browser. The connection then activates in the current conversation without a restart. `/mcp` opens the same tab, while its subcommands support direct management:
 
 ```
 /mcp                 list integrations and connection status
@@ -354,12 +352,12 @@ Built-in integrations for Linear and Notion ship disabled. **Logging in enables 
 /mcp logout <name>   disconnect
 ```
 
-Credentials are stored once in `~/.prime/agent/auth.json` (under `mcp:<name>`); the kernel reads them directly and the host refreshes expired tokens. Enablement is derived from whether valid credentials exist, so there is no separate on/off switch.
+Credentials are stored once in `~/.apollo/agent/auth.json` (under `mcp:<name>`); the kernel reads them directly and the host refreshes expired tokens. Enablement is derived from whether valid credentials exist, so there is no separate on/off switch.
 
-**Add your own server.** Declare it under `mcpServers` in settings, then ship a tiny Python skill package that subclasses `McpIntegration`:
+**Add your own server.** Declare it under `mcpServers` in settings, then call it through the same `mcp` helper:
 
 ```jsonc
-// ~/.prime/agent/settings.json
+// ~/.apollo/agent/settings.json
 {
   "mcpServers": {
     "acme": { "type": "http", "url": "https://mcp.acme.com/mcp", "oauth": true }
@@ -367,21 +365,23 @@ Credentials are stored once in `~/.prime/agent/auth.json` (under `mcp:<name>`); 
 }
 ```
 
-```python
-# ~/.prime/agent/skills/acme/src/acme/__init__.py
-from rlm import McpIntegration
-
-class Acme(McpIntegration):
-    server = "acme"
-    url = "https://mcp.acme.com/mcp"
-
-acme = Acme()
-
-def __getattr__(name):     # so `import acme; await acme.<tool>(...)` works
-    return getattr(acme, name)
+```ts
+const result = await mcp.call_tool("acme", "some_tool", { ... })
 ```
 
-The base class connects with the official `mcp` SDK, injects the bearer token from `auth.json`, and binds the server's tools as async methods. Use `await acme.call_tool("name", {...})` for tools whose names aren't valid Python identifiers, or a static `bearerTokenEnvVar` instead of OAuth.
+You can also ship a tiny TypeScript skill module that subclasses `rlm.McpIntegration`:
+
+```ts
+// ~/.apollo/agent/skills/acme/src/acme/mod.ts
+class Acme extends rlm.McpIntegration {
+  server = "acme"
+  url = "https://mcp.acme.com/mcp"
+}
+
+export const acme = new Acme()
+```
+
+The base class connects, injects the bearer token from `auth.json`, and binds the server's tools as async methods, so `import acme; await acme.some_tool({...})` works. Use `await acme.call_tool("name", {...})` for tools whose names aren't valid identifiers, or a static `bearer_token_env` instead of OAuth.
 
 See [docs/mcp-integrations.md](docs/mcp-integrations.md) for the full authoring guide (package layout, auth options, the `McpIntegration` API, and caveats).
 
@@ -389,7 +389,7 @@ See [docs/mcp-integrations.md](docs/mcp-integrations.md) for the full authoring 
 
 <p align="center"><img src="docs/images/doom-extension.png" alt="Doom Extension" width="600"></p>
 
-TypeScript modules that extend Prime Agent with custom tools, commands, keyboard shortcuts, event handlers, and UI components.
+TypeScript modules that extend Apollo CLI with custom tools, commands, keyboard shortcuts, event handlers, and UI components.
 
 ```typescript
 export default function (pi: ExtensionAPI) {
@@ -399,7 +399,7 @@ export default function (pi: ExtensionAPI) {
 }
 ```
 
-The default export can also be `async`. Prime Agent waits for async extension factories before startup continues, which is useful for one-time initialization such as fetching remote model lists before calling `pi.registerProvider()`.
+The default export can also be `async`. Apollo CLI waits for async extension factories before startup continues, which is useful for one-time initialization such as fetching remote model lists before calling `pi.registerProvider()`.
 
 Schedule timers via `ctx.setTimeout`/`ctx.setInterval` (error-isolated, auto-cancelled on unload); raw global timers are unsupported for scheduling extension work.
 
@@ -413,49 +413,49 @@ Schedule timers via `ctx.setTimeout`/`ctx.setInterval` (error-isolated, auto-can
 - Git checkpointing and auto-commit
 - SSH and sandbox execution
 - MCP server integration
-- Make Prime Agent look like Claude Code
+- Make Apollo CLI look like Claude Code
 - Games while waiting (yes, Doom runs)
 - ...anything you can dream up
 
-Place in `~/.prime/agent/extensions/`, `.prime/agent/extensions/`, or a [Prime Agent package](#prime-agent-packages) to share with others. See [docs/extensions.md](docs/extensions.md) and [examples/extensions/](examples/extensions/).
+Place in `~/.apollo/agent/extensions/`, `.apollo/agent/extensions/`, or an [Apollo CLI package](#apollo-cli-packages) to share with others. See [docs/extensions.md](docs/extensions.md) and [examples/extensions/](examples/extensions/).
 
 ### Themes
 
-Built-in: `dark`, `light`. Themes hot-reload: modify the active theme file and Prime Agent immediately applies changes.
+Built-in: `dark`, `light`. Themes hot-reload: modify the active theme file and Apollo CLI immediately applies changes.
 
-Place in `~/.prime/agent/themes/`, `.prime/agent/themes/`, or a [Prime Agent package](#prime-agent-packages) to share with others. See [docs/themes.md](docs/themes.md).
+Place in `~/.apollo/agent/themes/`, `.apollo/agent/themes/`, or an [Apollo CLI package](#apollo-cli-packages) to share with others. See [docs/themes.md](docs/themes.md).
 
-### Prime Agent Packages
+### Apollo CLI Packages
 
 Bundle and share extensions, skills, prompts, and themes via npm or git.
 
-> **Security:** Prime Agent packages run with full system access. Extensions execute arbitrary code, and skills can instruct the model to perform any action including running executables. Review source code before installing third-party packages.
+> **Security:** Apollo CLI packages run with full system access. Extensions execute arbitrary code, and skills can instruct the model to perform any action including running executables. Review source code before installing third-party packages.
 
 ```bash
-prime-agent package install npm:@foo/prime-agent-tools
-prime-agent package install npm:@foo/prime-agent-tools@1.2.3  # pinned version
-prime-agent package install git:github.com/user/repo
-prime-agent package install git:github.com/user/repo@v1       # tag or commit
-prime-agent package install git:git@github.com:user/repo
-prime-agent package install https://github.com/user/repo
-prime-agent package install ssh://git@github.com/user/repo
-prime-agent package remove npm:@foo/prime-agent-tools
-prime-agent package list
-prime-agent package update                                  # update packages, except pinned versions
-prime-agent package update npm:@foo/prime-agent-tools       # update one package
-prime-agent update                                          # update Prime Agent
-prime-agent update --force                                  # reinstall Prime Agent even if current
-prime-agent config                                          # enable/disable package resources
+apollo-cli package install npm:@foo/apollo-tools
+apollo-cli package install npm:@foo/apollo-tools@1.2.3  # pinned version
+apollo-cli package install git:github.com/user/repo
+apollo-cli package install git:github.com/user/repo@v1       # tag or commit
+apollo-cli package install git:git@github.com:user/repo
+apollo-cli package install https://github.com/user/repo
+apollo-cli package install ssh://git@github.com:user/repo
+apollo-cli package remove npm:@foo/apollo-tools
+apollo-cli package list
+apollo-cli package update                                  # update packages, except pinned versions
+apollo-cli package update npm:@foo/apollo-tools       # update one package
+apollo-cli update                                          # update Apollo CLI
+apollo-cli update --force                                  # reinstall Apollo CLI even if current
+apollo-cli config                                          # enable/disable package resources
 ```
 
-Packages install to `~/.prime/agent/git/` (git) or global npm. Use `--local` for project-local installs (`.prime/agent/git/`, `.prime/agent/npm/`). Git packages install dependencies with `npm install --omit=dev` by default, so runtime deps must be listed under `dependencies`; when `npmCommand` is configured, git packages use plain `install` for compatibility with wrappers. If you use a Node version manager and want package installs to reuse a stable npm context, set `npmCommand` in `settings.json`, for example `["mise", "exec", "node@20", "--", "npm"]`.
+Packages install to `~/.apollo/agent/git/` (git) or global npm. Use `--local` for project-local installs (`.apollo/agent/git/`, `.apollo/agent/npm/`). Git packages install dependencies with `npm install --omit=dev` by default, so runtime deps must be listed under `dependencies`; when `npmCommand` is configured, git packages use plain `install` for compatibility with wrappers. If you use a Node version manager and want package installs to reuse a stable npm context, set `npmCommand` in `settings.json`, for example `["mise", "exec", "node@20", "--", "npm"]`.
 
 Create a package by adding the inherited `pi` manifest key to `package.json`:
 
 ```json
 {
-  "name": "my-prime-agent-package",
-  "keywords": ["prime-agent-package"],
+  "name": "my-apollo-cli-package",
+  "keywords": ["apollo-cli-package"],
   "pi": {
     "extensions": ["./extensions"],
     "skills": ["./skills"],
@@ -465,7 +465,7 @@ Create a package by adding the inherited `pi` manifest key to `package.json`:
 }
 ```
 
-Without a `pi` manifest, Prime Agent auto-discovers from conventional directories (`extensions/`, `skills/`, `prompts/`, `themes/`).
+Without a `pi` manifest, Apollo CLI auto-discovers from conventional directories (`extensions/`, `skills/`, `prompts/`, `themes/`).
 
 See [docs/packages.md](docs/packages.md).
 
@@ -474,7 +474,7 @@ See [docs/packages.md](docs/packages.md).
 ### SDK
 
 ```typescript
-import { AuthStorage, createAgentSession, ModelRegistry, SessionManager } from "prime-agent";
+import { AuthStorage, createAgentSession, ModelRegistry, SessionManager } from "apollo-cli";
 
 const authStorage = AuthStorage.create();
 const modelRegistry = ModelRegistry.create(authStorage);
@@ -496,7 +496,7 @@ See [docs/sdk.md](docs/sdk.md) and [examples/sdk/](examples/sdk/).
 For non-Node.js integrations, use RPC mode over stdin/stdout:
 
 ```bash
-prime-agent --mode rpc
+apollo-cli --mode rpc
 ```
 
 RPC mode uses strict LF-delimited JSONL framing. Clients must split records on `\n` only. Do not use generic line readers like Node `readline`, which also split on Unicode separators inside JSON payloads.
@@ -505,31 +505,31 @@ See [docs/rpc.md](docs/rpc.md) for the protocol.
 
 ## Upstream
 
-Prime Agent is forked from [pi-mono](https://github.com/badlogic/pi-mono) by Mario Zechner and keeps MIT attribution in the root license.
+Apollo CLI is forked from [pi-mono](https://github.com/badlogic/pi-mono) by Mario Zechner and keeps MIT attribution in the root license.
 
-The package architecture, extension model, and source package names still reflect that upstream lineage while the distributed command and release artifacts are branded for Prime Agent.
+The package architecture, extension model, and source package names still reflect that upstream lineage while the distributed command and release artifacts are branded for Apollo CLI.
 
 ## CLI Reference
 
 ```bash
-prime-agent [options] [@files...] [messages...]
+apollo-cli [options] [@files...] [messages...]
 ```
 
-Run `prime-agent help` for the command list and `prime-agent help <command>` for details.
+Run `apollo-cli help` for the command list and `apollo-cli help <command>` for details.
 
 ### Agent Commands
 
 ```bash
-prime-agent agents                         # Search running, idle, and inactive sessions
-prime-agent list [--all]                   # List active or saved agents
-prime-agent sessions [--all] [--json]     # Show agent status, activity, and usage
-prime-agent attach <agent>                 # Attach the interactive UI
-prime-agent stop <agent>                   # Stop one agent
-prime-agent rename <agent> <name>          # Rename an agent
-prime-agent send <agent> <message>         # Send an agent-to-agent message
-prime-agent status                         # Show background service status
-prime-agent doctor [--fix]                 # Inspect or safely clean up background services
-prime-agent shutdown [--force]             # Stop every agent, worker, and background service
+apollo-cli agents                          # Search running, idle, and inactive sessions
+apollo-cli list [--all]                    # List active or saved agents
+apollo-cli sessions [--all] [--json]      # Show agent status, activity, and usage
+apollo-cli attach <agent>                  # Attach the interactive UI
+apollo-cli stop <agent>                    # Stop one agent
+apollo-cli rename <agent> <name>           # Rename an agent
+apollo-cli send <agent> <message>          # Send an agent-to-agent message
+apollo-cli status                          # Show background service status
+apollo-cli doctor [--fix]                  # Inspect or safely clean up background services
+apollo-cli shutdown [--force]              # Stop every agent, worker, and background service
 ```
 
 `shutdown` asks for confirmation. `shutdown --force` skips confirmation and kills unresponsive workers and their tracked child processes.
@@ -537,9 +537,9 @@ prime-agent shutdown [--force]             # Stop every agent, worker, and backg
 ### Scheduled Prompts
 
 ```bash
-prime-agent schedule list [--all] [agent]
-prime-agent schedule add <agent> <schedule> -- <message>
-prime-agent schedule cancel <job-id>
+apollo-cli schedule list [--all] [agent]
+apollo-cli schedule add <agent> <schedule> -- <message>
+apollo-cli schedule cancel <job-id>
 ```
 
 Schedules run prompts later or repeatedly. A schedule can be a supported one-time expression such as `in 5m` or a cron expression.
@@ -549,12 +549,12 @@ Schedules run prompts later or repeatedly. A schedule can be a supported one-tim
 Packages bundle capabilities such as extensions, skills, prompts, and themes.
 
 ```bash
-prime-agent package install <source> [--local]
-prime-agent package remove <source> [--local]
-prime-agent package list
-prime-agent package update [source]
-prime-agent update [--force]                   # Update Prime Agent itself
-prime-agent config                             # Enable/disable package resources
+apollo-cli package install <source> [--local]
+apollo-cli package remove <source> [--local]
+apollo-cli package list
+apollo-cli package update [source]
+apollo-cli update [--force]                   # Update Apollo CLI itself
+apollo-cli config                             # Enable/disable package resources
 ```
 
 ### Modes
@@ -566,10 +566,10 @@ prime-agent config                             # Enable/disable package resource
 | `--mode json` | Output all events as JSON lines (see [docs/json.md](docs/json.md)) |
 | `--mode rpc` | RPC mode for process integration (see [docs/rpc.md](docs/rpc.md)) |
 
-In print mode, Prime Agent also reads piped stdin and merges it into the initial prompt:
+In print mode, Apollo CLI also reads piped stdin and merges it into the initial prompt:
 
 ```bash
-cat README.md | prime-agent -p "Summarize this text"
+cat README.md | apollo-cli -p "Summarize this text"
 ```
 
 ### Model Options
@@ -582,7 +582,7 @@ cat README.md | prime-agent -p "Summarize this text"
 | `--thinking <level>` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh` |
 | `--models <patterns>` | Comma-separated patterns for Alt+M cycling |
 
-Use `prime-agent model list [search]` to list available models.
+Use `apollo-cli model list [search]` to list available models.
 
 ### Session Options
 
@@ -594,7 +594,7 @@ Use `prime-agent model list [search]` to list available models.
 | `--session-dir <dir>` | Custom session storage directory |
 | `--no-session` | Ephemeral mode (don't save) |
 
-Use `prime-agent session export <file> [output]` to export a saved session to HTML.
+Use `apollo-cli session export <file> [output]` to export a saved session to HTML.
 
 ### Tool Options
 
@@ -604,7 +604,7 @@ Use `prime-agent session export <file> [output]` to export a saved session to HT
 | `--no-builtin-tools`, `-nbt` | Disable built-in tools by default but keep extension/custom tools enabled |
 | `--no-tools`, `-nt` | Disable all tools by default |
 
-Available built-in tools: `ipython`
+Available built-in tools: `iscript` (`ipython` remains an alias)
 
 ### Resource Options
 
@@ -654,67 +654,67 @@ Gates run before the continuation, turn, token, and wall-clock limits are evalua
 Prefix files with `@` to include in the message:
 
 ```bash
-prime-agent @prompt.md "Answer this"
-prime-agent -p @screenshot.png "What's in this image?"
-prime-agent @code.ts @test.ts "Review these files"
+apollo-cli @prompt.md "Answer this"
+apollo-cli -p @screenshot.png "What's in this image?"
+apollo-cli @code.ts @test.ts "Review these files"
 ```
 
 ### Examples
 
 ```bash
 # Interactive with initial prompt
-prime-agent "List all .ts files in src/"
+apollo-cli "List all .ts files in src/"
 
 # Non-interactive
-prime-agent -p "Summarize this codebase"
+apollo-cli -p "Summarize this codebase"
 
 # Non-interactive with piped stdin
-cat README.md | prime-agent -p "Summarize this text"
+cat README.md | apollo-cli -p "Summarize this text"
 
 # Different model
-prime-agent --provider openai --model gpt-4o "Help me refactor"
+apollo-cli --provider openai --model gpt-4o "Help me refactor"
 
 # Model with provider prefix (no --provider needed)
-prime-agent --model openai/gpt-4o "Help me refactor"
+apollo-cli --model openai/gpt-4o "Help me refactor"
 
 # Model with thinking level shorthand
-prime-agent --model sonnet:high "Solve this complex problem"
+apollo-cli --model sonnet:high "Solve this complex problem"
 
 # Limit model cycling
-prime-agent --models "claude-*,gpt-4o"
+apollo-cli --models "claude-*,gpt-4o"
 
-# Restrict to the built-in Python REPL tool
-prime-agent --tools ipython -p "Review the code"
+# Restrict to the built-in IScript (TypeScript) REPL tool
+apollo-cli --tools iscript -p "Review the code"
 
 # High thinking level
-prime-agent --thinking high "Solve this complex problem"
+apollo-cli --thinking high "Solve this complex problem"
 ```
 
 ### Environment Variables
 
 | Variable | Description |
 |----------|-------------|
-| `PRIME_AGENT_CODING_AGENT_DIR` | Override config directory (default: `~/.prime/agent`) |
+| `PRIME_AGENT_CODING_AGENT_DIR` | Override config directory (default: `~/.apollo/agent`) |
 | `PRIME_AGENT_SESSION_DIR` | Override session storage directory (overridden by `--session-dir`) |
 | `PRIME_AGENT_CODING_AGENT_SESSION_DIR` | Legacy alias for `PRIME_AGENT_SESSION_DIR` |
 | `PI_PACKAGE_DIR` | Override package directory (useful for Nix/Guix where store paths tokenize poorly) |
 | `PI_OFFLINE` | Disable startup network operations, including update checks and package update checks |
-| `PI_SKIP_VERSION_CHECK` | Skip the Prime Agent version update check at startup. This prevents the release manifest request |
+| `PI_SKIP_VERSION_CHECK` | Skip the Apollo CLI version update check at startup. This prevents the release manifest request |
 | `PRIME_AGENT_TELEMETRY` | Override pseudonymous aggregate usage analytics with `1`/`true`/`yes` or `0`/`false`/`no` |
 | `PRIME_AGENT_TELEMETRY_ENDPOINT` | Override the aggregate analytics ingestion endpoint |
 | `DO_NOT_TRACK` | Disable aggregate usage analytics when set to `1`/`true`/`yes` |
-| `PRIME_AGENT_DOWNLOAD_BASE_URL` | Override the Prime Agent release manifest and tarball base URL |
+| `PRIME_AGENT_DOWNLOAD_BASE_URL` | Override the Apollo CLI release manifest and tarball base URL |
 | `PI_CACHE_RETENTION` | Set to `long` for extended prompt cache (Anthropic: 1h, OpenAI: 24h) |
 | `PRIME_API_KEY` | Prime Inference API key; also used for trace sharing if it has `agent_traces` scope |
 | `PRIME_TEAM_ID` | Override the Prime Inference team request header without changing the saved Agent team |
 | `PRIME_AGENT_INFERENCE_API_BASE_URL` | Override Agent authentication and team API URLs, not model inference URLs; defaults to production |
 | `PRIME_AGENT_INFERENCE_FRONTEND_URL` | Override the Agent login browser frontend; defaults to production |
 | `PRIME_AGENT_TRACES_API_KEY` | Prime API key used only for opt-in trace sharing |
-| `PRIME_AGENT_TRACES_BASE_URL` | Override the Prime Agent trace upload API base URL |
-| `PRIME_AGENT_KERNEL_PYTHON` | Use an existing Python environment with `prime-agent-runtime` instead of auto-bootstrapping `~/.prime/agent/kernel-venv` |
+| `PRIME_AGENT_TRACES_BASE_URL` | Override the Apollo CLI trace upload API base URL |
+| `PRIME_AGENT_KERNEL_PYTHON` | Legacy interpreter-override name (current: `APOLLO_KERNEL_DENO`); a binary named `deno` runs the IScript kernel under Deno instead of host Node |
 | `VISUAL`, `EDITOR` | External editor for Ctrl+G |
 
-The remaining `PI_*` variables in this table are compatibility names still read by the current runtime. They do not change the application name, command, or default `~/.prime/agent` configuration path.
+The remaining `PI_*` variables in this table are compatibility names still read by the current runtime. They do not change the application name, command, or default `~/.apollo/agent` configuration path.
 
 ## Contributing & Development
 
@@ -726,6 +726,6 @@ MIT
 
 ## See Also
 
-- [Prime Agent AI](../ai): Core LLM toolkit
-- [Prime Agent Core](../agent): Agent framework
-- [Prime Agent TUI](../tui): Terminal UI components
+- [Apollo CLI AI](../ai): Core LLM toolkit
+- [Apollo CLI Core](../agent): Agent framework
+- [Apollo CLI TUI](../tui): Terminal UI components

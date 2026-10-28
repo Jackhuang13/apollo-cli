@@ -1,4 +1,4 @@
-# Prime Agent capability evals
+# Apollo CLI capability evals
 
 These harnesses measure end-to-end agent capability with a real model.
 They complement the repo's unit tests (which never call a model) and the

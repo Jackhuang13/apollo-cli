@@ -1,6 +1,6 @@
-# Contributing to Prime Agent
+# Contributing to Apollo CLI
 
-Thanks for your interest in contributing to Prime Agent! Prime Agent is developed in public, and we welcome bug reports, feature requests, questions, and other feedback. To keep the project maintainable, public contributions begin in [GitHub Discussions](https://github.com/PrimeIntellect-ai/prime-agent/discussions).
+Thanks for your interest in contributing to Apollo CLI! Apollo CLI is developed in public, and we welcome bug reports, feature requests, questions, and other feedback. To keep the project maintainable, public contributions begin in [GitHub Discussions](https://github.com/PrimeIntellect-ai/prime-agent/discussions).
 
 With the influx of agent-generated contributions, we do not review unsolicited pull requests or use public Issues as the initial intake queue. While we are open to contributions by agents, you are responsible for your code and must understand how it interacts with the entire project.
 
@@ -24,7 +24,7 @@ Issues opened by unapproved contributors are automatically closed and redirected
 
 ## Pull Requests and Trusted Contributors
 
-Prime Agent runs on user machines and can execute code with the user's permissions. We therefore limit pull requests to maintainers and trusted contributors who have been explicitly vouched for. Maintainers may vouch for someone after they have consistently demonstrated a useful understanding of the project through Discussions, issue investigation, testing, documentation, or other collaboration. There is no separate application process and no guarantee that participation will result in approval.
+Apollo CLI runs on user machines and can execute code with the user's permissions. We therefore limit pull requests to maintainers and trusted contributors who have been explicitly vouched for. Maintainers may vouch for someone after they have consistently demonstrated a useful understanding of the project through Discussions, issue investigation, testing, documentation, or other collaboration. There is no separate application process and no guarantee that participation will result in approval.
 
 Pull requests from unvouched contributors are automatically closed. If you are interested in contributing code, begin with a Discussion and work with the maintainers on the problem first.
 

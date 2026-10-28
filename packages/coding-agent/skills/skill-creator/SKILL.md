@@ -1,6 +1,6 @@
 ---
 name: skill-creator
-description: Create, validate, and install Apollo / Prime Agent skills - both markdown skills and Deno/TypeScript-backed skills callable from the IScript REPL. Use when the user asks to create a skill, turn a workflow or script into a reusable skill, or asks how to write a SKILL.md and deno.json.
+description: Create, validate, and install Apollo CLI skills - both markdown skills and Deno/TypeScript-backed skills callable from the IScript REPL. Use when the user asks to create a skill, turn a workflow or script into a reusable skill, or asks how to write a SKILL.md and deno.json.
 ---
 
 # Skill Creator
@@ -32,7 +32,7 @@ import { scaffold_skill } from "skill_creator";
 scaffold_skill({
   name: "my-skill",
   description: "Perform custom validation checks when reviewing PRs.",
-  dir: ".apollo/skills",
+  dir: ".apollo/agent/skills",
   withModule: true,
 });
 ```

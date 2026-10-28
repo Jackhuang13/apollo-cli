@@ -2,7 +2,7 @@
 description: Parallel rlm subagent research (grounded answer)
 argument-hint: "<question or decision> [angles...]"
 ---
-<!-- Source: adapted from pi-subagents (MIT, nicopreme) prompts/parallel-research.md; delegation rewritten for Prime Agent native rlm.spawn. -->
+<!-- Source: adapted from pi-subagents (MIT, nicopreme) prompts/parallel-research.md; delegation rewritten for Apollo CLI native rlm.spawn. -->
 
 對目前的問題/決策做並行研究,建構有證據的回答。你(父 session)框定問題與
 分配角度;child 只做研究或探勘,不發明大計畫。

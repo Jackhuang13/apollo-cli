@@ -2,7 +2,7 @@
 description: Parallel rlm subagent review of current work
 argument-hint: "[autofix] [review target or focus]"
 ---
-<!-- Source: adapted from pi-subagents (MIT, nicopreme) prompts/parallel-review.md; delegation rewritten for Prime Agent native rlm.spawn. -->
+<!-- Source: adapted from pi-subagents (MIT, nicopreme) prompts/parallel-review.md; delegation rewritten for Apollo CLI native rlm.spawn. -->
 
 對目前工作做對抗性並行 review。你(父 session)是仲裁者與最終決定者。
 Reviewer 以 fresh context 執行:沒有你的對話史,因此每份 brief 必須自含。

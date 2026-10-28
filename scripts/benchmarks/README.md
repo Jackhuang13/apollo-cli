@@ -1,6 +1,6 @@
 # PR performance benchmarks
 
-Each push to an open, vouched PR starts an informational Prime Agent benchmark, including PRs targeting
+Each push to an open, vouched PR starts an informational Apollo CLI benchmark, including PRs targeting
 another branch in a stack. Multiple commits in one push produce one run for the final head. Draft PRs
 are included. A two-second debounce and per-PR cancellation avoid finishing obsolete runs.
 `workflow_dispatch` reruns an open PR by number.
@@ -21,7 +21,7 @@ provisioning and cleanup. Optional `PRIME_BENCHMARK_TEAM_ID` selects the sandbox
 No inference key, model configuration, or login is required.
 
 The workflows must first land on `main`: both `pull_request_target` and the completion listener run
-trusted default-branch code. Trigger `Prime Agent benchmarks` manually with an open PR number after
+trusted default-branch code. Trigger `Apollo CLI benchmarks` manually with an open PR number after
 configuring the sandbox secret. The first rollout should include a main-versus-main calibration.
 
 The request checks out the event's `GITHUB_SHA`, which GitHub resolves to the default-branch commit for
@@ -153,7 +153,7 @@ called at any point.
 
 Each trial stops all benchmark-user processes first, then measures:
 
-- **Resume large session (cold):** `prime-agent --resume <id>` from process spawn until the resumed
+- **Resume large session (cold):** `apollo-cli --resume <id>` from process spawn until the resumed
   transcript tail is rendered and the editor echoes a typed marker. This is the "switch into a large
   session" path including daemon and session-worker startup.
 - **Switch into large session:** in a running TUI, `/resume <id>` keystroke to rendered tail plus

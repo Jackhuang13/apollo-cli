@@ -1,7 +1,7 @@
 # rlm-roles
 
-Prime Agent 原生 rlm 子代理的並行 review/research 模板、順序 teamwork 流水線與角色卡,
-委派全部走內建 `rlm.spawn`(child = 獨立 fresh-context 的 prime-agent session)。
+Apollo CLI 原生 rlm 子代理的並行 review/research 模板、順序 teamwork 流水線與角色卡,
+委派全部走內建 `rlm.spawn`(child = 獨立 fresh-context 的 apollo-cli session)。
 
 ## 內容
 
