@@ -27,6 +27,7 @@ import * as savedSessionCatalog from "../src/modes/daemon/saved-session-catalog.
 import type { InteractiveModeUiServices } from "../src/modes/interactive/interactive-mode-services.js";
 import { initTheme, stopThemeWatcher } from "../src/modes/interactive/theme/theme.js";
 import { WORKING_ICON_INTERVAL_MS } from "../src/modes/interactive/theme/working-icon.js";
+import { APOLLO_LOGO } from "../src/themes/apollo-logo.js";
 
 const modeMocks = vi.hoisted(() => ({
 	interactiveRun: vi.fn<() => Promise<never>>(),
@@ -221,6 +222,23 @@ describe("AgentsViewMode", () => {
 			invoke("reconcileCatalogs", view);
 			const rows = Reflect.get(view, "rows") as AgentsViewRow[];
 			expect(rows[Reflect.get(view, "selectedIndex") as number]?.summary.sessionId).toBe(fallback.sessionId);
+		} finally {
+			stopThemeWatcher();
+		}
+	});
+
+	it("renders the main-screen butterfly logo and the session cwd in the splash", () => {
+		const splashLines = (scopeRoot?: SessionSummary) => {
+			const state = createInitialAgentsViewPersistentState({});
+			state.scopeRootSummary = scopeRoot;
+			const view = new AgentsViewMode({ config: {}, uiServices: createUiServices() }, state);
+			return stripAnsi((Reflect.get(view, "splash") as { render(w: number): string[] }).render(100).join("\n"));
+		};
+		try {
+			const unscoped = splashLines();
+			expect(unscoped).toContain(APOLLO_LOGO.split("\n")[3]!);
+			const scoped = splashLines(summary({ cwd: "/tmp/proj-x" }));
+			expect(scoped).toContain("cwd /tmp/proj-x");
 		} finally {
 			stopThemeWatcher();
 		}

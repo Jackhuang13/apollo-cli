@@ -31,6 +31,7 @@ import {
 	parseSlashCommand,
 	resolveBuiltinSlashCommandName,
 } from "../../core/slash-commands.js";
+import { APOLLO_LOGO, APOLLO_LOGO_ROWS } from "../../themes/apollo-logo.js";
 import { canonicalizePath } from "../../utils/paths.js";
 import { ensureTool } from "../../utils/tools-manager.js";
 import { DaemonAgentConnection } from "../agent-connection/daemon-agent-connection.js";
@@ -1043,6 +1044,8 @@ export class AgentsViewMode implements Component, Focusable {
 		};
 		this.splash = new BrandSplashHeader(VERSION, () => this.getSplashCwd(), undefined, {
 			topPadding: true,
+			logo: APOLLO_LOGO,
+			logoRows: APOLLO_LOGO_ROWS,
 			getExtraMetadata: () => {
 				const root = this.scopeRootSummary;
 				return [
@@ -2988,8 +2991,9 @@ export class AgentsViewMode implements Component, Focusable {
 	}
 
 	private getSplashCwd(): string | undefined {
-		if (this.scopeRootSummary) return undefined;
-		return this.rows[this.selectedIndex]?.summary.cwd ?? this.options.uiServices.getInitialCwd();
+		const root = this.scopeRootSummary;
+		if (root) return root.cwd;
+		return this.options.uiServices.getInitialCwd();
 	}
 
 	private getRowIcon(section: AgentsViewSection): string {

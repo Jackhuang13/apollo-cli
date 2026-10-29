@@ -7,7 +7,7 @@ import type {
 	AgentConnectionHeartbeat,
 	AgentConnectionRlmChildAgentSnapshot,
 } from "../src/modes/agent-connection/types.js";
-import type { HeartbeatManagerComponent } from "../src/modes/interactive/components/heartbeat-manager.js";
+import { HeartbeatManagerComponent } from "../src/modes/interactive/components/heartbeat-manager.js";
 import {
 	HEARTBEAT_REFRESH_FETCH_TIMEOUT_MS,
 	HEARTBEAT_REFRESH_RETRY_DELAY_MS,
@@ -767,5 +767,34 @@ describe("interactive /heartbeats command", () => {
 		expect(outcome).toBe("settled");
 		expect(context.heartbeatManagerHandle).toBe(overlayHandle);
 		expect(refreshHeartbeatCatalog).toHaveBeenCalledOnce();
+	});
+
+	it("keeps next and last run times visible with long session labels", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date(2026, 6, 21, 12, 0));
+		try {
+			const job = heartbeat({
+				nextRunAt: new Date(2026, 6, 21, 14, 32).toISOString(),
+				lastRunAt: new Date(2026, 6, 21, 9, 11).toISOString(),
+				runCount: 47,
+			});
+			const manager = new HeartbeatManagerComponent({
+				getHeartbeats: () => [
+					{ job, sessionName: "check the build status and report every failing target to the release channel" },
+				],
+				getRows: () => 24,
+				onAction: vi.fn(async () => undefined),
+				onClose: vi.fn(),
+				requestRender: vi.fn(),
+			});
+			expect(stripAnsi(manager.render(100).join("\n"))).toContain("next 07-21 14:32");
+			manager.handleInput("\r");
+			const detail = stripAnsi(manager.render(100).join("\n"));
+			expect(detail).toContain("next 07-21 14:32");
+			expect(detail).toContain("last 07-21 09:11");
+			expect(detail).toContain("runs 47");
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 });

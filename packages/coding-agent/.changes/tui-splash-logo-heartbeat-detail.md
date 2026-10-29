@@ -1,0 +1,2 @@
+- The agents view splash now shows the same butterfly logo and session working directory as the main screen.
+- Heartbeat list rows and the detail view now show next and last run times as a right-aligned local-time column that is no longer truncated by long session names.
