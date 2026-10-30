@@ -13,6 +13,13 @@ const COMPLETION_SUFFIX = Buffer.from("\x1f");
 const CANCEL_TERM_GRACE_MS = 500;
 const CANCEL_KILL_WAIT_MS = 2000;
 const COMPLETION_NOTICE_COMMAND_CAP = 1000;
+
+function cappedCommand(command: string): string {
+	if (command.length > COMPLETION_NOTICE_COMMAND_CAP) {
+		return `${command.slice(0, COMPLETION_NOTICE_COMMAND_CAP)}\n... [command truncated]`;
+	}
+	return command;
+}
 export const DEFAULT_BASH_TIMEOUT_SECONDS = 600;
 
 export const BASH_ACTIVITY_MIME = "application/vnd.apollo-cli.bash-activity+json";
@@ -632,7 +639,7 @@ export class BashHandle implements PromiseLike<BashResult> {
 		const cellBarrier = replBridge.currentCellCompletionBarrier();
 		if (!cellBarrier) return;
 		const activityId = randomBytes(16).toString("hex");
-		const activity = { id: activityId, pid: this._pid, active: true };
+		const activity = { id: activityId, pid: this._pid, active: true, command: cappedCommand(this.command) };
 		replBridge.emit({
 			[BASH_ACTIVITY_MIME]: activity,
 			[LEGACY_BASH_ACTIVITY_MIME]: activity,
@@ -646,10 +653,7 @@ export class BashHandle implements PromiseLike<BashResult> {
 				if (this._awaitedByCreatingCell || this._resultConsumed || !replBridge?.isActive()) {
 					return;
 				}
-				let command = this.command;
-				if (command.length > COMPLETION_NOTICE_COMMAND_CAP) {
-					command = `${command.slice(0, COMPLETION_NOTICE_COMMAND_CAP)}\n... [command truncated]`;
-				}
+				const command = cappedCommand(this.command);
 				const reply = await replBridge.hostRequest({
 					type: "bash.completed",
 					pid: this._pid,

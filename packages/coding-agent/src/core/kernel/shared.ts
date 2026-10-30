@@ -32,6 +32,15 @@ export type HostRequestHandler = (payload: Record<string, unknown>) => Promise<R
 /** Host request handlers keyed by request type (e.g. "rlm.run", "goal.complete"). */
 export type HostRequestHandlers = Record<string, HostRequestHandler>;
 
+/** One live background bash() handle as tracked from kernel activity events. */
+export interface BackgroundBashSummary {
+	pid: number;
+	/** Present only when the kernel runtime includes it in activity events. */
+	command?: string;
+	/** Wall time (Date.now()) the host first observed the handle active. */
+	startedAt: number;
+}
+
 /** Where and how to persist the kernel's user namespace so it survives resume. */
 export interface KernelSnapshotConfig {
 	/** Absolute path for the dill payload. */
@@ -55,6 +64,8 @@ export interface KernelManagerOptions {
 	hostHandlers?: HostRequestHandlers;
 	/** Fires when the last live background bash() handle settles (its activity track empties or the kernel tears down). */
 	onBackgroundWorkSettled?: () => void;
+	/** Fires after any change to the live background bash() handle set (add, remove, or teardown clear). */
+	onBackgroundBashChange?: (items: BackgroundBashSummary[]) => void;
 	pythonSkills?: readonly KernelPythonSkill[];
 	/** Persist/revive the user namespace across kernel restarts and session resume. */
 	snapshot?: KernelSnapshotConfig;
@@ -292,6 +303,8 @@ export interface KernelClient {
 	readonly ownerSessionId: string | undefined;
 	readonly isRunning: boolean;
 	readonly hasBackgroundWork: boolean;
+	/** Live background bash() handles, oldest first. */
+	getBackgroundBashSummaries(): BackgroundBashSummary[];
 	/** Active kernel dialect: the TS/JS "script" runtime. */
 	readonly interpreter: "script";
 	/** Terminal: the kernel died or was torn down; only a fresh manager can serve again. */

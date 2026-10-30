@@ -310,6 +310,10 @@ export function acpUpdatesForSessionEvent(
 				},
 			];
 
+		// Kernel-local background bash tracking has no ACP counterpart.
+		case "background_bash_changed":
+			return [];
+
 		default:
 			return [];
 	}

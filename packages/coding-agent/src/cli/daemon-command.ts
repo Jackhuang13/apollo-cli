@@ -1529,6 +1529,7 @@ class DaemonAttachTerminal {
 			case "message_start":
 			case "tool_execution_update":
 			case "auth_stale":
+			case "background_bash_changed":
 				return;
 		}
 	}

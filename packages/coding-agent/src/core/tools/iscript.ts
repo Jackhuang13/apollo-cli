@@ -9,6 +9,7 @@ import type { ExtensionContext, ToolDefinition } from "../extensions/types.js";
 import { withKernelBootPermit } from "../kernel/boot-gate.js";
 import type { KernelBootstrapProgressHandler } from "../kernel/bootstrap.js";
 import {
+	type BackgroundBashSummary,
 	type ExecuteResult,
 	type HostRequestHandlers,
 	type KernelAttachment,
@@ -323,6 +324,8 @@ export interface IScriptToolOptions {
 	onUnavailableSkills?: (errors: UnavailablePythonSkills) => void;
 	/** Fires when the kernel's last live background bash() handle settles, so owed continuations can resume. */
 	onBackgroundWorkSettled?: () => void;
+	/** Fires after any change to the kernel's live background bash() handle set. */
+	onBackgroundBashChange?: (items: BackgroundBashSummary[]) => void;
 	onLateSentAgentMessage?: (toolCallId: string, message: KernelSentAgentMessage) => void;
 	/** Shared provisioner owning the kernel lifecycle. When provided, the remaining options are ignored. */
 	provisioner?: IScriptKernelProvisioner;
@@ -507,6 +510,7 @@ export class IScriptKernelProvisioner {
 				sessionId: this.options?.sessionId,
 				hostHandlers: this.options?.hostHandlers,
 				onBackgroundWorkSettled: this.options?.onBackgroundWorkSettled,
+				onBackgroundBashChange: this.options?.onBackgroundBashChange,
 				pythonSkills: this.options?.pythonSkills,
 				// Only persistent sessions (which have an artifact dir) get a revivable snapshot.
 				snapshot: snapshotDir

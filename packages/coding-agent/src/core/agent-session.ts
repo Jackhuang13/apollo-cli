@@ -181,7 +181,7 @@ import {
 	validateGoalObjective,
 } from "./goals.js";
 import { resolveImageModelOverride } from "./image-model-routing.js";
-import type { HostRequestHandlers, KernelSentAgentMessage } from "./kernel/index.js";
+import type { BackgroundBashSummary, HostRequestHandlers, KernelSentAgentMessage } from "./kernel/index.js";
 import { type RestoreResult, snapshotPathIn } from "./kernel/state-snapshot.js";
 import type { AcpMcpServerConfig } from "./mcp/acp-mcp-types.js";
 import type { McpManager } from "./mcp/mcp-manager.js";
@@ -472,6 +472,7 @@ export type AgentSessionEvent =
 	| { type: "rlm_progress_note"; message: string; timestamp: number }
 	| { type: "recap_update"; recap: string | undefined }
 	| { type: "goal_update"; goal: GoalState }
+	| { type: "background_bash_changed"; items: BackgroundBashSummary[] }
 	| {
 			type: "bash_start";
 			command: string;
@@ -2909,6 +2910,11 @@ export class AgentSession {
 	 */
 	private _hasLiveBackgroundBashHandles(): boolean {
 		return this._ipythonKernelProvisioner?.manager?.hasBackgroundWork === true;
+	}
+
+	/** Live kernel background bash() handles, oldest first; empty when none. */
+	get backgroundBashSummaries(): BackgroundBashSummary[] {
+		return this._ipythonKernelProvisioner?.manager?.getBackgroundBashSummaries() ?? [];
 	}
 
 	/** Deliver the owed continuation once descendant work settles. */
@@ -10876,6 +10882,7 @@ export class AgentSession {
 					this._maybeResumeGoalContinuationAfterRlmWork();
 					this._maybeResumeAutonomousContinuationAfterRlmWork();
 				},
+				onBackgroundBashChange: (items) => this._emit({ type: "background_bash_changed", items }),
 			});
 			configuredBaseToolDefinitions = createAllToolDefinitions(this._cwd, {
 				ipython: {

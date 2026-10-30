@@ -148,6 +148,7 @@ function createConnectionState(activeSessionId: string): AgentConnectionState {
 		sessionActions: { queuedCount: 0, steering: [], followUps: [] },
 		compactionCount: 0,
 		goal: { active: false, status: "idle", tokensUsed: 0, timeUsedSeconds: 0, continuationsUsed: 0 },
+		backgroundBash: [],
 		scopedModels: [],
 		activeToolNames: [],
 		contextUsage: undefined,

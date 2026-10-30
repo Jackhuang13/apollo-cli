@@ -106,7 +106,7 @@ import type {
 } from "../../core/extensions/index.js";
 import { FooterDataProvider, type ReadonlyFooterDataProvider } from "../../core/footer-data-provider.js";
 import { emptyGoalState, formatGoalUsage, GOAL_CONTEXT_PREVIEW_LABEL, type GoalState } from "../../core/goals.js";
-import type { KernelSentAgentMessage } from "../../core/kernel/index.js";
+import type { BackgroundBashSummary, KernelSentAgentMessage } from "../../core/kernel/index.js";
 import { type AppKeybinding, KeybindingsManager } from "../../core/keybindings.js";
 import {
 	logoutMcpAccount,
@@ -1197,6 +1197,36 @@ export function formatAgentDepthLabel(depth: number | undefined, hasChildren: bo
 	return `depth ${depth}`;
 }
 
+const BACKGROUND_BASH_TRAY_COMMAND_MAX_WIDTH = 40;
+
+function formatElapsedSeconds(seconds: number): string {
+	const totalSeconds = Math.max(0, Math.trunc(seconds));
+	if (totalSeconds < 60) {
+		return `${totalSeconds}s`;
+	}
+	const minutes = Math.floor(totalSeconds / 60);
+	const remainingSeconds = totalSeconds % 60;
+	if (minutes < 60) {
+		return `${minutes}m ${remainingSeconds.toString().padStart(2, "0")}s`;
+	}
+	const hours = Math.floor(minutes / 60);
+	const remainingMinutes = minutes % 60;
+	return `${hours}h ${remainingMinutes.toString().padStart(2, "0")}m`;
+}
+
+export function formatBackgroundBashTrayLabel(
+	items: readonly BackgroundBashSummary[],
+	now: number,
+): string | undefined {
+	if (items.length === 0) return undefined;
+	const oldest = items.reduce((a, b) => (b.startedAt < a.startedAt ? b : a));
+	const elapsed = formatElapsedSeconds(Math.max(0, (now - oldest.startedAt) / 1000));
+	const count = `${items.length} bg`;
+	const command = oldest.command?.replace(/\s+/g, " ").trim();
+	if (!command) return `${count} · ${elapsed}`;
+	return `${count} · ${truncateToWidth(command, BACKGROUND_BASH_TRAY_COMMAND_MAX_WIDTH, "…")} · ${elapsed}`;
+}
+
 /**
  * Map a fixed verification category to user-readable wording. The persisted
  * record keeps only the category; this layer adds the friendly explanation.
@@ -1317,6 +1347,7 @@ export class InteractiveMode {
 	private lastStatusText: Text | undefined = undefined;
 	private lastGoalAnnouncement: GoalAnnouncementSnapshot | undefined = undefined;
 	private goalTrayTimer: NodeJS.Timeout | undefined = undefined;
+	private backgroundBashTrayTimer: NodeJS.Timeout | undefined = undefined;
 
 	private streamingComponent: AssistantMessageComponent | undefined = undefined;
 	private streamingMessage: AssistantMessage | undefined = undefined;
@@ -3338,6 +3369,9 @@ export class InteractiveMode {
 			case "goal_update":
 				this.patchConnectionState({ goal: event.goal });
 				break;
+			case "background_bash_changed":
+				this.patchConnectionState({ backgroundBash: event.items });
+				break;
 			case "bash_start":
 				this.patchConnectionState({ isBashRunning: true });
 				break;
@@ -3486,6 +3520,7 @@ export class InteractiveMode {
 		this.refreshTopBarCost();
 		this.setGoalAnnouncementBaseline(this.getGoalState());
 		this.syncGoalTray(this.getGoalState());
+		this.syncBackgroundBashTray();
 		this.syncWorkingLoader();
 	}
 
@@ -3544,6 +3579,7 @@ export class InteractiveMode {
 		this.resetSubagentSummary();
 		this.setGoalAnnouncementBaseline(this.getGoalState());
 		this.syncGoalTray(this.getGoalState());
+		this.syncBackgroundBashTray();
 	}
 
 	private resetPendingToolState(): void {
@@ -3611,6 +3647,7 @@ export class InteractiveMode {
 		this.refreshTopBarCost();
 		this.setGoalAnnouncementBaseline(this.getGoalState());
 		this.syncGoalTray(this.getGoalState());
+		this.syncBackgroundBashTray();
 		this.syncWorkingLoader();
 	}
 
@@ -6488,6 +6525,10 @@ export class InteractiveMode {
 				this.handleGoalUpdate(event.goal);
 				break;
 
+			case "background_bash_changed":
+				this.syncBackgroundBashTray();
+				break;
+
 			case "refine_failed":
 				// This event has no request identity; the matching command result settles its loader.
 				this.showError(`Refinement failed: ${event.error}`);
@@ -6561,6 +6602,33 @@ export class InteractiveMode {
 		}
 		clearInterval(this.goalTrayTimer);
 		this.goalTrayTimer = undefined;
+	}
+
+	private syncBackgroundBashTray(): void {
+		this.subagentSummaryLine.invalidate();
+		this.updateBackgroundBashTrayTimer(this.connectionState?.backgroundBash ?? []);
+	}
+
+	private updateBackgroundBashTrayTimer(items: BackgroundBashSummary[]): void {
+		if (items.length > 0) {
+			if (!this.backgroundBashTrayTimer) {
+				this.backgroundBashTrayTimer = setInterval(() => {
+					this.subagentSummaryLine.invalidate();
+					this.ui.requestRender();
+				}, 1000);
+				this.backgroundBashTrayTimer.unref?.();
+			}
+			return;
+		}
+		this.stopBackgroundBashTrayTimer();
+	}
+
+	private stopBackgroundBashTrayTimer(): void {
+		if (!this.backgroundBashTrayTimer) {
+			return;
+		}
+		clearInterval(this.backgroundBashTrayTimer);
+		this.backgroundBashTrayTimer = undefined;
 	}
 
 	private setGoalAnnouncementBaseline(goal: GoalState): void {
@@ -6850,10 +6918,16 @@ export class InteractiveMode {
 		if (this.isInlinePickerOpen()) return undefined;
 		const goalLabel = this.getTrayGoalLabel();
 		const heartbeatLabel = this.getTrayHeartbeatLabel();
+		const backgroundLabel = this.getTrayBackgroundLabel();
 		return (
-			[goalLabel, heartbeatLabel, this.getModelContextLabel()].filter((label) => label !== undefined).join(" · ") ||
-			undefined
+			[goalLabel, heartbeatLabel, backgroundLabel, this.getModelContextLabel()]
+				.filter((label) => label !== undefined)
+				.join(" · ") || undefined
 		);
+	}
+
+	private getTrayBackgroundLabel(): string | undefined {
+		return formatBackgroundBashTrayLabel(this.connectionState?.backgroundBash ?? [], Date.now());
 	}
 
 	private getTrayHeartbeatLabel(): string | undefined {
@@ -6889,18 +6963,7 @@ export class InteractiveMode {
 	}
 
 	private formatGoalElapsed(seconds: number): string {
-		const totalSeconds = Math.max(0, Math.trunc(seconds));
-		if (totalSeconds < 60) {
-			return `${totalSeconds}s`;
-		}
-		const minutes = Math.floor(totalSeconds / 60);
-		const remainingSeconds = totalSeconds % 60;
-		if (minutes < 60) {
-			return `${minutes}m ${remainingSeconds.toString().padStart(2, "0")}s`;
-		}
-		const hours = Math.floor(minutes / 60);
-		const remainingMinutes = minutes % 60;
-		return `${hours}h ${remainingMinutes.toString().padStart(2, "0")}m`;
+		return formatElapsedSeconds(seconds);
 	}
 
 	private getUserMessageText(message: Message): string {
@@ -12624,6 +12687,7 @@ ${interrupt ? `| \`${interrupt}\` | Interrupt current operation |\n` : ""}${shor
 		this.discardRefineLoader();
 		this.stopWorkingPulse();
 		this.stopGoalTrayTimer();
+		this.stopBackgroundBashTrayTimer();
 		this.closeHeartbeatManager();
 		this.clearExtensionTerminalInputListeners();
 		this.footer.dispose();

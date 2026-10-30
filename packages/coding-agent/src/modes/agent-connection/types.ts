@@ -15,7 +15,7 @@ import type {
 import type { ReplayBuiltInToolName } from "../../core/extensions/index.js";
 import type { InputSource } from "../../core/extensions/types.js";
 import type { GoalState } from "../../core/goals.js";
-import type { KernelSentAgentMessage } from "../../core/kernel/index.js";
+import type { BackgroundBashSummary, KernelSentAgentMessage } from "../../core/kernel/index.js";
 import type { AcpMcpServerConfig } from "../../core/mcp/acp-mcp-types.js";
 import type { CustomMessage } from "../../core/messages.js";
 import type { RefinementResult } from "../../core/refinement/index.js";
@@ -351,6 +351,8 @@ export interface AgentConnectionState {
 	sessionActions: SessionActionSnapshot;
 	compactionCount: number;
 	goal: GoalState;
+	/** Live kernel background bash() handles (oldest first); empty when none. */
+	backgroundBash: BackgroundBashSummary[];
 	heartbeat?: AgentCronJob | null;
 	scopedModels: AgentConnectionScopedModel[];
 	activeToolNames: string[];
@@ -625,6 +627,7 @@ export type AgentConnectionSessionEvent =
 	| { type: "rlm_progress_note"; message: string; timestamp: number }
 	| { type: "recap_update"; recap: string | undefined }
 	| { type: "goal_update"; goal: GoalState }
+	| { type: "background_bash_changed"; items: BackgroundBashSummary[] }
 	| { type: "bash_start"; command: string; excludeFromContext: boolean; transient?: boolean; runId?: string }
 	| { type: "bash_output"; chunk: string }
 	| {

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentSession } from "../../../src/core/agent-session.js";
 import {
 	BASH_ACTIVITY_DISPLAY_MIME,
+	type BackgroundBashSummary,
 	createDeferred,
 	type HostRequestHandlers,
 	ReplKernelManager,
@@ -274,6 +275,13 @@ describeRuntime("#2053 background kernel bash residency", () => {
 });
 
 describe("kernel bash activity validation", () => {
+	const deliverActivity = (kernel: ReplKernelManager, data: Record<string, unknown>) =>
+		(kernel as unknown as { handleEvent(event: Record<string, unknown>): void }).handleEvent({
+			event: "display",
+			id: "old-cell",
+			data,
+		});
+
 	it("ignores unrelated display data and rejects malformed or mismatched releases", async () => {
 		const settled = vi.fn();
 		const kernel = new ReplKernelManager({ onBackgroundWorkSettled: settled });
@@ -306,5 +314,61 @@ describe("kernel bash activity validation", () => {
 		expect(settled).toHaveBeenCalledTimes(1);
 		await kernel.shutdown();
 		expect(settled).toHaveBeenCalledTimes(1);
+	});
+
+	it("tracks background bash summaries and fires onBackgroundBashChange on add, remove, and clear", async () => {
+		const changes: BackgroundBashSummary[][] = [];
+		const settled = vi.fn();
+		const kernel = new ReplKernelManager({
+			onBackgroundWorkSettled: settled,
+			onBackgroundBashChange: (items) => changes.push(items.map((item) => ({ ...item }))),
+		});
+		const deliver = (data: Record<string, unknown>) => deliverActivity(kernel, data);
+		const activeId = "a".repeat(32);
+		const secondId = "b".repeat(32);
+		deliver({ [BASH_ACTIVITY_DISPLAY_MIME]: { id: activeId, pid: 42, active: true, command: "npm test" } });
+		deliver({ [BASH_ACTIVITY_DISPLAY_MIME]: { id: secondId, pid: 43, active: true } });
+		const sum = kernel.getBackgroundBashSummaries();
+		expect(sum.map((item) => [item.pid, item.command])).toEqual([
+			[42, "npm test"],
+			[43, undefined],
+		]);
+		// Duplicate active for a tracked id must not re-fire or duplicate.
+		deliver({ [BASH_ACTIVITY_DISPLAY_MIME]: { id: activeId, pid: 42, active: true, command: "npm test" } });
+		deliver({ [BASH_ACTIVITY_DISPLAY_MIME]: { id: secondId, pid: 43, active: false } });
+		deliver({ [BASH_ACTIVITY_DISPLAY_MIME]: { id: activeId, pid: 42, active: false } });
+		expect(kernel.hasBackgroundWork).toBe(false);
+		expect(settled).toHaveBeenCalledTimes(1);
+		expect(changes.map((items) => items.map((item) => item.pid))).toEqual([[42], [42, 43], [42], []]);
+		expect(changes[0][0].command).toBe("npm test");
+		// Callback snapshots are copies; mutating them must not leak into kernel state.
+		changes[0][0].pid = 0;
+		deliver({ [BASH_ACTIVITY_DISPLAY_MIME]: { id: activeId, pid: 42, active: true, command: "npm test" } });
+		expect(kernel.getBackgroundBashSummaries()[0].pid).toBe(42);
+		await kernel.shutdown();
+		expect(kernel.getBackgroundBashSummaries()).toEqual([]);
+		expect(changes.at(-1)).toEqual([]);
+		expect(settled).toHaveBeenCalledTimes(2);
+	});
+
+	it("session backgroundBashSummaries mirrors the kernel manager's live background handles", async () => {
+		const harness = await createHarness({ tools: [] });
+		const session = harness.session;
+		const internals = session as unknown as KernelSession;
+		const manager = new ReplKernelManager({});
+		try {
+			const provisioner = new IpythonKernelProvisioner(harness.tempDir);
+			vi.spyOn(provisioner, "manager", "get").mockReturnValue(manager);
+			internals._ipythonKernelProvisioner = provisioner;
+			const deliver = (data: Record<string, unknown>) => deliverActivity(manager, data);
+			const activityId = "c".repeat(32);
+			deliver({ [BASH_ACTIVITY_DISPLAY_MIME]: { id: activityId, pid: 55, active: true, command: "npm test" } });
+			expect(session.backgroundBashSummaries.map((item) => [item.pid, item.command])).toEqual([[55, "npm test"]]);
+			deliver({ [BASH_ACTIVITY_DISPLAY_MIME]: { id: activityId, pid: 55, active: false } });
+			expect(session.backgroundBashSummaries).toEqual([]);
+		} finally {
+			await manager.shutdown();
+			harness.cleanup();
+		}
 	});
 });

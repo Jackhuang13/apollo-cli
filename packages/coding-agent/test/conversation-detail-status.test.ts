@@ -1,12 +1,13 @@
 import { setKeybindings, visibleWidth } from "@earendil-works/pi-tui";
 import stripAnsi from "strip-ansi";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { BackgroundBashSummary } from "../src/core/kernel/index.js";
 import { KeybindingsManager } from "../src/core/keybindings.js";
 import { SettingsManager } from "../src/core/settings-manager.js";
 import { formatConversationDetailStatus } from "../src/modes/interactive/components/keybinding-hints.js";
 import { PromptContextLine } from "../src/modes/interactive/components/prompt-context-line.js";
 import { SubagentSummaryLine } from "../src/modes/interactive/components/subagent-summary-line.js";
-import { InteractiveMode } from "../src/modes/interactive/interactive-mode.js";
+import { formatBackgroundBashTrayLabel, InteractiveMode } from "../src/modes/interactive/interactive-mode.js";
 import { initTheme, theme } from "../src/modes/interactive/theme/theme.js";
 
 interface DetailMode {
@@ -17,6 +18,7 @@ interface DetailMode {
 	getTrayContextLabel(): string | undefined;
 	toggleToolOutputExpansion(): void;
 	setToolsExpanded(expanded: boolean): void;
+	connectionState: { thinkingLevel: string; backgroundBash?: BackgroundBashSummary[] };
 }
 function createMode(): DetailMode {
 	return Object.assign(Object.create(InteractiveMode.prototype), {
@@ -97,4 +99,25 @@ describe("conversation detail status", () => {
 				expect(visibleWidth(line)).toBeLessThanOrEqual(width);
 		}
 	});
+});
+
+describe("background bash tray label", () => {
+	const now = 1_000_000;
+	const item1 = { pid: 1, command: "npm test", startedAt: now - 42_000 };
+	const item2 = { pid: 2, command: "npm run lint", startedAt: now - 10_000 };
+	it("inserts the label between the heartbeat and model context", () => {
+		initTheme("dark");
+		const mode = createMode();
+		mode.connectionState = { thinkingLevel: "high", backgroundBash: [{ ...item1, startedAt: Date.now() - 42_000 }] };
+		expect(stripAnsi(mode.getTrayContextLabel()!)).toBe("1 bg · npm test · 42s · glm-5.3:high");
+	});
+	it.each([
+		[[], undefined],
+		[[item1], "1 bg · npm test · 42s"],
+		[[item2, item1], "2 bg · npm test · 42s"],
+		[[{ pid: 1, command: "npm   run\ntest", startedAt: now - 42_000 }], "1 bg · npm run test · 42s"],
+		[[{ pid: 1, command: "x".repeat(45), startedAt: now - 42_000 }], `1 bg · ${"x".repeat(39)}… · 42s`],
+		[[item2, { pid: 1, startedAt: now - 42_000 }], "2 bg · 42s"],
+		[[{ pid: 1, command: "npm test", startedAt: now - 192_000 }], "1 bg · npm test · 3m 12s"],
+	])("formats %j as %s", (items, expected) => expect(formatBackgroundBashTrayLabel(items, now)).toBe(expected));
 });

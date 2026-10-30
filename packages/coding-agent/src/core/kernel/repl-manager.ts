@@ -27,6 +27,7 @@ import {
 	AGENT_MESSAGE_DISPLAY_MIME,
 	ATTACHMENT_DISPLAY_MIME,
 	BASH_ACTIVITY_DISPLAY_MIME,
+	type BackgroundBashSummary,
 	createDeferred,
 	createKernelStartupAbortError,
 	DEFAULT_MAX_OUTPUT_CHARS,
@@ -215,6 +216,7 @@ export class ReplKernelManager {
 		| "sessionId"
 		| "hostHandlers"
 		| "onBackgroundWorkSettled"
+		| "onBackgroundBashChange"
 		| "pythonSkills"
 		| "snapshot"
 		| "bootstrapCode"
@@ -239,7 +241,7 @@ export class ReplKernelManager {
 	private pendingBackgroundOutput = "";
 	private pendingBackgroundOutputTruncated = false;
 	private readonly inFlightHostRequests = new Set<Promise<void>>();
-	private readonly backgroundBashHandles = new Map<string, number>();
+	private readonly backgroundBashHandles = new Map<string, BackgroundBashSummary>();
 	private state: "idle" | "starting" | "running" | "shutdown" = "idle";
 	/** Bumped by every teardown so a stale in-flight doStart can never touch a newer kernel. */
 	private startGeneration = 0;
@@ -286,6 +288,7 @@ export class ReplKernelManager {
 			sessionId: options.sessionId,
 			hostHandlers: options.hostHandlers,
 			onBackgroundWorkSettled: options.onBackgroundWorkSettled,
+			onBackgroundBashChange: options.onBackgroundBashChange,
 			pythonSkills: options.pythonSkills,
 			snapshot: options.snapshot,
 			bootstrapCode: options.bootstrapCode,
@@ -317,6 +320,20 @@ export class ReplKernelManager {
 
 	get hasBackgroundWork(): boolean {
 		return this.backgroundBashHandles.size > 0;
+	}
+
+	getBackgroundBashSummaries(): BackgroundBashSummary[] {
+		return [...this.backgroundBashHandles.values()].sort((a, b) => a.startedAt - b.startedAt);
+	}
+
+	private emitBackgroundBashChange(): void {
+		if (!this.options.onBackgroundBashChange) return;
+		try {
+			this.options.onBackgroundBashChange(this.getBackgroundBashSummaries());
+		} catch (error) {
+			// The map already reflects the change; diagnostics keep the event path alive.
+			this.appendKernelDiagnostic(`background bash change callback failed: ${errorMessage(error)}`);
+		}
 	}
 
 	private appendKernelDiagnostic(message: string): void {
@@ -986,10 +1003,19 @@ export class ReplKernelManager {
 			) {
 				if (activity.active) {
 					if (!this.backgroundBashHandles.has(activity.id)) {
-						this.backgroundBashHandles.set(activity.id, activity.pid);
+						this.backgroundBashHandles.set(activity.id, {
+							pid: activity.pid,
+							command:
+								typeof activity.command === "string" && activity.command.length > 0
+									? activity.command
+									: undefined,
+							startedAt: Date.now(),
+						});
+						this.emitBackgroundBashChange();
 					}
-				} else if (this.backgroundBashHandles.get(activity.id) === activity.pid) {
+				} else if (this.backgroundBashHandles.get(activity.id)?.pid === activity.pid) {
 					this.backgroundBashHandles.delete(activity.id);
+					this.emitBackgroundBashChange();
 					if (this.backgroundBashHandles.size === 0) {
 						// The last live handle settled: the completion notice for it
 						// is already admitted, so owed continuations may resume. A
@@ -1547,6 +1573,7 @@ export class ReplKernelManager {
 		// host callback failure must not abort the kernel teardown.
 		if (this.backgroundBashHandles.size > 0) {
 			this.backgroundBashHandles.clear();
+			this.emitBackgroundBashChange();
 			try {
 				this.options.onBackgroundWorkSettled?.();
 			} catch (error) {

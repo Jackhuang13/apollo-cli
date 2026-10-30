@@ -48,6 +48,7 @@ export function createAgentConnectionState(
 		sessionActions: session.getSessionActionSnapshot(),
 		compactionCount: sessionManager.getEntries().filter((entry) => entry.type === "compaction").length,
 		goal: session.goalState,
+		backgroundBash: session.backgroundBashSummaries,
 		scopedModels: session.scopedModels.map((scoped) => ({
 			model: toConnectionModel(scoped.model),
 			thinkingLevel: scoped.thinkingLevel,

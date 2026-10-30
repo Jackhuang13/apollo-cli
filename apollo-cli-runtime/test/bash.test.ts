@@ -1,6 +1,64 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { bash } from "../src/rlm/bash.ts";
+import { _registerReplBridge, BASH_ACTIVITY_MIME, bash } from "../src/rlm/bash.ts";
+
+function withActivityRecorder(
+	fn: (awaitMatch: (pred: (a: Record<string, unknown>) => boolean) => Promise<Record<string, unknown>>) => Promise<void>,
+): Promise<void> {
+	const activities: Record<string, unknown>[] = [];
+	const waiters = new Set<() => void>();
+	_registerReplBridge({
+		isActive: () => true,
+		emit: (data) => {
+			const activity = data[BASH_ACTIVITY_MIME] as Record<string, unknown> | undefined;
+			if (!activity) return;
+			activities.push(activity);
+			for (const waiter of [...waiters]) waiter();
+		},
+		hostRequest: async () => ({ status: "ok" }),
+		sendRawEvent: () => {},
+		currentCellCompletionBarrier: () => Promise.resolve(),
+	});
+	const awaitMatch = (pred: (a: Record<string, unknown>) => boolean) =>
+		new Promise<Record<string, unknown>>((resolve) => {
+			const check = () => {
+				const hit = activities.find(pred);
+				if (hit) {
+					waiters.delete(check);
+					resolve(hit);
+				}
+			};
+			waiters.add(check);
+			check();
+		});
+	return fn(awaitMatch).finally(() =>
+		_registerReplBridge({
+			isActive: () => false,
+			emit: () => {},
+			hostRequest: async () => ({}),
+			sendRawEvent: () => {},
+			currentCellCompletionBarrier: () => null,
+		}),
+	);
+}
+
+test("bash() activity events carry the command, capped like the completion notice", async () => {
+	await withActivityRecorder(async (awaitMatch) => {
+		const handle1 = bash("sleep 0.1");
+		const longCommand = `sleep 0.1 && echo ${"x".repeat(1197)}`;
+		const handle2 = bash(longCommand);
+		const [a1, , a2, i2] = await Promise.all([
+			awaitMatch((a) => a.pid === handle1.pid && a.active === true),
+			awaitMatch((a) => a.pid === handle1.pid && a.active === false),
+			awaitMatch((a) => a.pid === handle2.pid && a.active === true),
+			awaitMatch((a) => a.pid === handle2.pid && a.active === false),
+		]);
+		const truncated = `${longCommand.slice(0, 1000)}\n... [command truncated]`;
+		assert.equal(a1.command, "sleep 0.1");
+		assert.equal(a2.command, truncated);
+		assert.equal(i2.command, truncated);
+	});
+});
 
 test("bash() await returns result and exit code", async () => {
 	const result = await bash("echo hi");

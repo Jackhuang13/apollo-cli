@@ -740,6 +740,7 @@ function createConnectionState(activeSessionId: string, sessionId: string): Agen
 			timeUsedSeconds: 0,
 			continuationsUsed: 0,
 		},
+		backgroundBash: [],
 		scopedModels: [],
 		activeToolNames: ["ipython"],
 		contextUsage: undefined,
