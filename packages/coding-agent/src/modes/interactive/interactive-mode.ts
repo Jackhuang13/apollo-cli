@@ -1197,8 +1197,6 @@ export function formatAgentDepthLabel(depth: number | undefined, hasChildren: bo
 	return `depth ${depth}`;
 }
 
-const BACKGROUND_BASH_TRAY_COMMAND_MAX_WIDTH = 40;
-
 function formatElapsedSeconds(seconds: number): string {
 	const totalSeconds = Math.max(0, Math.trunc(seconds));
 	if (totalSeconds < 60) {
@@ -1219,12 +1217,8 @@ export function formatBackgroundBashTrayLabel(
 	now: number,
 ): string | undefined {
 	if (items.length === 0) return undefined;
-	const oldest = items.reduce((a, b) => (b.startedAt < a.startedAt ? b : a));
-	const elapsed = formatElapsedSeconds(Math.max(0, (now - oldest.startedAt) / 1000));
-	const count = `${items.length} bg`;
-	const command = oldest.command?.replace(/\s+/g, " ").trim();
-	if (!command) return `${count} · ${elapsed}`;
-	return `${count} · ${truncateToWidth(command, BACKGROUND_BASH_TRAY_COMMAND_MAX_WIDTH, "…")} · ${elapsed}`;
+	const dot = Math.floor(now / 1000) % 2 === 0 ? "🟢" : "⚪";
+	return `${dot} ${items.length} Background Running`;
 }
 
 /**

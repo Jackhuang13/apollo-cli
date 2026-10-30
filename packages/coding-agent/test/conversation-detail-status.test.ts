@@ -103,21 +103,21 @@ describe("conversation detail status", () => {
 
 describe("background bash tray label", () => {
 	const now = 1_000_000;
-	const item1 = { pid: 1, command: "npm test", startedAt: now - 42_000 };
-	const item2 = { pid: 2, command: "npm run lint", startedAt: now - 10_000 };
+	const item = { pid: 1, startedAt: now };
 	it("inserts the label between the heartbeat and model context", () => {
 		initTheme("dark");
 		const mode = createMode();
-		mode.connectionState = { thinkingLevel: "high", backgroundBash: [{ ...item1, startedAt: Date.now() - 42_000 }] };
-		expect(stripAnsi(mode.getTrayContextLabel()!)).toBe("1 bg · npm test · 42s · glm-5.3:high");
+		mode.connectionState = { thinkingLevel: "high", backgroundBash: [item] };
+		expect(stripAnsi(mode.getTrayContextLabel()!).replace(/^(🟢|⚪) /, "")).toBe(
+			"1 Background Running · glm-5.3:high",
+		);
 	});
 	it.each([
 		[[], undefined],
-		[[item1], "1 bg · npm test · 42s"],
-		[[item2, item1], "2 bg · npm test · 42s"],
-		[[{ pid: 1, command: "npm   run\ntest", startedAt: now - 42_000 }], "1 bg · npm run test · 42s"],
-		[[{ pid: 1, command: "x".repeat(45), startedAt: now - 42_000 }], `1 bg · ${"x".repeat(39)}… · 42s`],
-		[[item2, { pid: 1, startedAt: now - 42_000 }], "2 bg · 42s"],
-		[[{ pid: 1, command: "npm test", startedAt: now - 192_000 }], "1 bg · npm test · 3m 12s"],
-	])("formats %j as %s", (items, expected) => expect(formatBackgroundBashTrayLabel(items, now)).toBe(expected));
+		[[item], "🟢 1 Background Running"],
+		[[item, item], "🟢 2 Background Running"],
+		[[item, item, item], "⚪ 3 Background Running", now + 1_000],
+	])("formats %j as %s", (items, expected, at = now) =>
+		expect(formatBackgroundBashTrayLabel(items, at)).toBe(expected),
+	);
 });

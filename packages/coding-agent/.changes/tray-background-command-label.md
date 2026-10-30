@@ -1,1 +1,1 @@
-- Added a tray indicator for running background bash commands, showing the count, the longest-running command, and elapsed time next to the heartbeat count.
+- Added a blinking tray indicator for running background bash commands, showing the count next to the heartbeat (e.g. 🟢 3 Background Running).
