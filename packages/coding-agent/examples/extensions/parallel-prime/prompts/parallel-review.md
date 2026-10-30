@@ -65,7 +65,23 @@ IScript REPL:
     結尾必須只寫一行:Merge verdict: BLOCK / OK / OK with notes 之一。
     若無任何 qualified finding,只回:No issues found.
     超過半頁的細節寫入 <artifact-dir>/review-<角度>.md,訊息只放摘要+路徑。
+    若預期執行超過 10 分鐘,期間以 rlm.progress_note(<目前進度>) 定時回報。
     回報方式:await agent_message.send(<摘要>, { receiver_role: "parent" })
+
+長時間巡檢(選用,預設不建):review 目標很大(大量檔案、全 repo 掃描)
+且 child 可能跑超過 15 分鐘時,spawn 同 cell 建監控 heartbeat(pre-imported
+`rlm_heartbeat` 模組,免 import):
+
+    await rlm_heartbeat.create(
+      "監控 heartbeat(冪等;一切正常則不對用戶多餘回報,直接結束回合):`rlm.list_subagents()` " +
+      "查每個 running child 的 activity_stale_ms / progress_note;stale(>10 分鐘無活動)→ " +
+      "`agent_observe` 查 rollout;僅慢則 `agent_message` 催進度;掛住則 `rlm.delete_subagent` " +
+      "後按本模板角度 fresh re-spawn。全部 settled → 刪除本 heartbeat" +
+      "(`rlm_heartbeat.list()` 找 id 後 `rlm_heartbeat.delete`),進行 §4 彙總。",
+      "15m", "review-watch", "follow_up");
+
+短任務不必建:child 終態(完成/錯誤/取消/刪除,含退出未回覆)由 terminal
+notice 自動喚醒,不需輪詢。
 
 Reviewer 執行期間,你可以自己做狹隘檢查(若有用)。
 

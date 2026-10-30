@@ -10,7 +10,7 @@ Apollo CLI 原生 rlm 子代理的並行 review/research 模板、順序 teamwor
 | prompt | `/parallel-review` | 2~3 個 fresh reviewer 並行對抗性 review(總數 ≤3、同時 ≤2;P0/P1/P2 + Merge verdict) |
 | prompt | `/parallel-research` | 2~3 個 researcher/scout 並行(總數 ≤3、同時 ≤2)研究,五段彙總 |
 | prompt | `/parallel-cleanup` | 2 個 reviewer 並行清理(deslop + verbosity) |
-| prompt | `/teamwork` | 父編排順序流水線:研究→規劃→產出→[部署]→驗收;Leader/Observer 主 agent,至多 2 併行,失敗路回無獨立除錯角色 |
+| prompt | `/teamwork` | 父編排順序流水線:研究→規劃→產出→[部署]→驗收;Leader/Observer 主 agent,至多 2 併行,失敗路回無獨立除錯角色;掛住 child 由 session heartbeat 巡檢(自含建立/刪除) |
 | skill | `reviewer` | reviewer child 角色卡(brief 骨架 + 輸出契約) |
 | skill | `researcher` | researcher child 角色卡 |
 | skill | `scout` | scout child 角色卡 |

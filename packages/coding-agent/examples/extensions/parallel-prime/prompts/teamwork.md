@@ -66,6 +66,7 @@ Artifact 目錄(spawn 前先在父 kernel 執行一次;`art` 以字面值填進�
     本階段驗收標準:<可核驗、逐項列舉>。
     長材料(超過半頁)寫入 <artifact-dir>/<階段>-<主題>.md,
     訊息只放摘要+路徑。
+    若預期執行超過 10 分鐘,期間以 rlm.progress_note(<目前進度>) 定時回報。
     回報方式:await agent_message.send(<摘要>, { receiver_role: "parent" })
 
 角色專有重點(與本套件同名角色卡一致):
@@ -86,6 +87,7 @@ IScript REPL:
     // 研究階段(選用;唯一併行點;≤2;同 cell spawn 後結束回合):
     const a = await rlm.spawn("<brief researcher>", "teamwork-research")
     const b = await rlm.spawn("<brief scout>", "teamwork-scout")
+    // 第一個 spawn cell:spawn 後建 §3 監控 heartbeat(一條鏈一個,代碼見 §3)
     // 之後每階段各一個 cell:先驗證上一階段產物路徑,填進 brief 再 spawn:
     const c = await rlm.spawn("<brief architect>", "teamwork-architect")
     const d = await rlm.spawn("<brief builder>", "teamwork-builder")
@@ -106,7 +108,7 @@ receiver_name: "<child 名>" })` 繼續對話,同 session、保留全部先前�
   - 回報後 Leader 發現缺資料,一問可補的。
 - **fresh spawn**(階段交接的預設):
   - 換角色或換目標(architect→builder 等);
-  - 失敗路回修正輪(見 §3):**永不 continue 原產出 defect 的 child**——
+  - 失敗路回修正輪(見 §4):**永不 continue 原產出 defect 的 child**——
     修正輪若繼承原 child「我這樣寫是對的」記憶,易超範圍修(T3 實測:
     窄 brief + fresh context → 修正 diff 只 1 行)。
 - **continue 上限**:同一 child 階段內 continue ≤3 回合;超過、child 回報
@@ -115,10 +117,38 @@ receiver_name: "<child 名>" })` 繼續對話,同 session、保留全部先前�
 - **命名**:continue 的 child 保留原名;同角色 fresh spawn 加後綴
   (-fix1、-r1 等)以便區分。
 
-## 3. 失敗路回(Leader 裁決;無獨立除錯角色)
+## 3. 監控 Heartbeat(掛住 child 巡檢;建一次、跨階段保留、最終回報前刪除)
+
+Runtime 對終態(child 完成/錯誤/取消/刪除,含「退出未回覆」terminal
+notice)與背景 bash 完成會自動喚醒父 session,不需輪詢。唯一需要主動
+巡檢的是:child running 但掛住(長命令 hang、死迴圈、provider hang)——
+無 terminal notice、無 reply,父永遠不被喚醒。
+
+在第一個 spawn cell 內、spawn 之後建立(至多 2 併行 child,一個
+heartbeat 覆蓋整條鏈;先 `rlm_heartbeat.list()` 確認不存在;跨階段
+保留,不重複建):
+
+    // rlm_heartbeat 為 pre-imported skill 模組,免 import
+    const watchInstruction =
+      "監控 heartbeat(冪等巡檢;一切正常則不對用戶多餘回報,直接結束回合): " +
+      "1) `rlm.list_subagents()` 查每個 child:status / activity_stale_ms / progress_note / activity。 " +
+      "2) 有 running child stale(>10 分鐘無活動):用 `agent_observe` 查 rollout; " +
+      "僅慢則用 `agent_message` 催其回報進度(rlm.progress_note); " +
+      "掛住或無法自控則 `rlm.delete_subagent` 後按 §4 失敗路回 fresh re-spawn " +
+      "(修正輪不 continue 原 child)。 " +
+      "3) 全部 settled:驗證聲稱的產物路徑可讀,依當前階段填下一階段 brief 並 spawn " +
+      "(spawn 後結束回合),刪除本 heartbeat(`rlm_heartbeat.list()` 找 id 後 " +
+      "`rlm_heartbeat.delete`);全鏈完成則刪後依 §5 做最終回報。";
+    await rlm_heartbeat.create(watchInstruction, "15m", "teamwork-watch", "follow_up");
+
+間隔 ≥10 分鐘(stale 門檻 10 分鐘,更短的 tick 純燒 turn;建議 15m);
+delivery 用 `follow_up`,不中斷父進行中的仲裁 turn。
+
+## 4. 失敗路回(Leader 裁決;無獨立除錯角色)
 
 觸發:builder 產出錯誤/不完整、tester 驗收 FAIL(附 defect list)、
-devops 部署失敗。Leader 分類並路回:
+devops 部署失敗、child running 但掛住(§3 heartbeat 察覺的 stale child;
+re-spawn 計入該階段修正輪上限)。Leader 分類並路回:
 - 實作層:重派 builder(fresh spawn,**不得 continue 原 builder**):brief = 目標 + 規劃書路徑 +
   defect list/錯誤記錄全文;builder 有權在修正輪內調整規劃書。
 - 規劃層(方向性錯誤):重派 architect 修規劃書 → builder 重做。
@@ -126,18 +156,20 @@ devops 部署失敗。Leader 分類並路回:
 每階段最多 3 輪修正(用戶指定上限優先);超限:停止,向用戶回報卡點、
 現狀與選項(繼續/換方向/中止)。
 
-## 4. 最終回報(全鏈完成後)
+## 5. 最終回報(全鏈完成後)
 
-回報前,驗證所有聲稱的產物路徑確實可讀。向用戶的最終回報為五段:
+先刪除 §3 監控 heartbeat(`rlm_heartbeat.list()` 找 id 後
+`rlm_heartbeat.delete`);再驗證所有聲稱的產物路徑確實可讀。向用戶的最終
+回報為五段:
 - 交付物:絕對路徑 + 一句話說明
 - 驗收結論:裁決 + Tester 逐項對照表(路徑)
 - 部署結果(若有):目標、驗證證據、回滾方式
 - 缺口與假設
 - 建議的下一步
 
-## 5. 下一步
+## 6. 下一步
 
-最終回報後結束。除非用戶要求修正,不主動啟動新流水線;修正要求走第 3
+最終回報後結束。除非用戶要求修正,不主動啟動新流水線;修正要求走第 4
 節路回(從對應階段起)。
 
 本次 invocation 的額外目標、控制詞(local / remote:<env> / skip-research)或修正輪數:
