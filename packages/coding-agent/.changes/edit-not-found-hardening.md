@@ -1,0 +1,1 @@
+- Hardened `edit` not-found handling: one-way escape-sequence auto-repair for `old` text (result marked `repaired`), fuzzy matches now replace only the matched region instead of silently normalizing the whole file, and unmatched edits report the closest region with a character-level first diff and a copyable file window.
