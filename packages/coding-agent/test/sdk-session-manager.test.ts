@@ -86,7 +86,9 @@ describe("createAgentSession session manager defaults", () => {
 
 		const ipythonTool = session.agent.state.tools.find((tool) => tool.name === "ipython");
 		expect(ipythonTool).toBeTruthy();
-		const result = await ipythonTool!.execute("test", { code: "import os\nprint(os.getcwd())" });
+		const result = await ipythonTool!.execute("test", {
+			code: "import * as os from 'node:os';\nconsole.log(Deno.cwd());",
+		});
 		const output = result.content
 			.filter((item): item is { type: "text"; text: string } => item.type === "text")
 			.map((item) => item.text)
@@ -154,6 +156,17 @@ describe("createAgentSession session manager defaults", () => {
 
 			expect(session.resourceLoader.getSkills().skills).toEqual(skills);
 			expect(session.resourceLoader.getSkills().diagnostics).toEqual([]);
+			session.dispose();
+		});
+
+		it("defaults active tools to iscript", async () => {
+			const { session } = await createAgentSession({
+				cwd: agentDir,
+				agentDir,
+				sessionManager: SessionManager.inMemory(),
+			});
+
+			expect(session.getActiveToolNames()).toEqual(["iscript"]);
 			session.dispose();
 		});
 	});

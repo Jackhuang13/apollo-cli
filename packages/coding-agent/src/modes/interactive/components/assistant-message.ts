@@ -164,7 +164,10 @@ export class AssistantMessageComponent extends Container {
 	hasTrailingSpace(): boolean {
 		return (
 			!!this.lastMessage?.content.some((content) => content?.type === "toolCall") &&
-			(this.hasVisibleBody() || this.lastMessage.stopReason === "aborted" || !this.isPrecededByToolActivity())
+			(this.hasVisibleBody() ||
+				this.lastMessage.stopReason === "aborted" ||
+				this.lastMessage.stopReason === "length" ||
+				!this.isPrecededByToolActivity())
 		);
 	}
 
@@ -174,6 +177,7 @@ export class AssistantMessageComponent extends Container {
 		if (
 			this.hasVisibleBody() ||
 			message?.stopReason === "aborted" ||
+			message?.stopReason === "length" ||
 			(message?.stopReason === "error" && !hasToolCalls)
 		)
 			return "visible";
@@ -326,9 +330,21 @@ export class AssistantMessageComponent extends Container {
 			const errorMsg = message.errorMessage || "Unknown error";
 			this.contentContainer.addChild(new Spacer(1));
 			this.contentContainer.addChild(this.createErrorComponent(errorMsg, "Error"));
+		} else if (message.stopReason === "length") {
+			const outputTokens = message.usage?.output;
+			const tokenDetail = typeof outputTokens === "number" && outputTokens > 0 ? ` (${outputTokens} tokens)` : "";
+			const lengthMsg = `Response truncated: reached max output token limit${tokenDetail}`;
+			this.contentContainer.addChild(new Spacer(1));
+			this.contentContainer.addChild(new Text(theme.fg("warning", lengthMsg), 1, 0));
 		}
 
-		if (hasToolCalls && (hasVisibleContent || message.stopReason === "aborted" || !this.isPrecededByToolActivity())) {
+		if (
+			hasToolCalls &&
+			(hasVisibleContent ||
+				message.stopReason === "aborted" ||
+				message.stopReason === "length" ||
+				!this.isPrecededByToolActivity())
+		) {
 			this.contentContainer.addChild(new Spacer(1));
 		}
 	}

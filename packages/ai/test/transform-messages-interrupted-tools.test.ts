@@ -137,6 +137,40 @@ describe("tool-result pairing boundaries", () => {
 			user,
 		]);
 	});
+
+	it.each([
+		{
+			desc: "filters empty thinking-only stopReason=length assistant messages",
+			assistantContent: [{ type: "thinking" as const, thinking: "massive thinking..." }],
+			keep: false,
+		},
+		{
+			desc: "keeps stopReason=length assistant messages with text",
+			assistantContent: [
+				{ type: "thinking" as const, thinking: "thinking..." },
+				{ type: "text" as const, text: "partial response" },
+			],
+			keep: true,
+		},
+		{
+			desc: "keeps stopReason=length assistant messages with tool calls",
+			assistantContent: [{ type: "toolCall" as const, id: "c1", name: "iscript", arguments: { code: "x=1" } }],
+			keep: true,
+		},
+	])("$desc", ({ assistantContent, keep }) => {
+		const assistantMsg: AssistantMessage = {
+			...assistant("toolUse"),
+			stopReason: "length",
+			content: assistantContent,
+		};
+		const messages: Message[] = [user, assistantMsg];
+		if (keep) {
+			const res = transformMessages(messages, model);
+			expect(res.some((m) => m.role === "assistant")).toBe(true);
+		} else {
+			expect(transformMessages(messages, model)).toEqual([user]);
+		}
+	});
 });
 
 describe("cross-model session migration", () => {

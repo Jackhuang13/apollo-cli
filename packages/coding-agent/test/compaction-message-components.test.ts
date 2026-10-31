@@ -1,8 +1,10 @@
+import { fauxAssistantMessage, fauxText, fauxThinking } from "@earendil-works/pi-ai";
 import { Container, setKeybindings, Text, visibleWidth } from "@earendil-works/pi-tui";
 import stripAnsi from "strip-ansi";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { KeybindingsManager } from "../src/core/keybindings.js";
 import { convertToLlm, createCompactionOutcomeMessage, createCompactionSummaryMessage } from "../src/core/messages.js";
+import { AssistantMessageComponent } from "../src/modes/interactive/components/assistant-message.js";
 import { CompactionOutcomeMessageComponent } from "../src/modes/interactive/components/compaction-outcome-message.js";
 import { CompactionSummaryMessageComponent } from "../src/modes/interactive/components/compaction-summary-message.js";
 import { InteractiveMode } from "../src/modes/interactive/interactive-mode.js";
@@ -136,5 +138,14 @@ describe("compact compaction messages", () => {
 		for (const line of lines) {
 			if (line.length > 0) expect(line.startsWith(" ")).toBe(true);
 		}
+	});
+
+	test("renders a visible truncation warning when stopReason is length even with hidden thinking", () => {
+		const msg = fauxAssistantMessage([fauxThinking("long reasoning"), fauxText("")], { stopReason: "length" });
+		msg.usage.output = 16384;
+		const component = new AssistantMessageComponent(msg, true);
+		expect(component.getSpacingContent()).toBe("visible");
+		const rendered = stripAnsi(component.render(120).join("\n"));
+		expect(rendered).toContain("Response truncated: reached max output token limit (16384 tokens)");
 	});
 });

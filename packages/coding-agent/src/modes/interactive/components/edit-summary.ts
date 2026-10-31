@@ -44,7 +44,7 @@ export function getToolFileChanges(
 	cwd: string,
 ): FileChangeSummary[] {
 	const changes = new Map<string, FileChangeSummary>();
-	if (toolName === "ipython") {
+	if (toolName === "iscript" || toolName === "ipython") {
 		for (const display of (result.details as IpythonToolDetails | undefined)?.diffs ?? []) {
 			const { diff } = generateDiffString(display.oldStr, display.newStr, 4, display.startLine ?? 1);
 			mergeFileChange(changes, { path: display.path, ...countChangedLines(diff) }, cwd);

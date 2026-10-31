@@ -185,6 +185,15 @@ export function transformMessages<TApi extends Api>(
 			if (assistantMsg.stopReason === "error" || assistantMsg.stopReason === "aborted") {
 				continue;
 			}
+			// Skip assistant messages truncated by output token limits if they produced no text
+			// and no tool calls (e.g. runaway thinking exhausted max_tokens).
+			// Replaying empty truncated reasoning wastes context and triggers thinking loops.
+			if (
+				assistantMsg.stopReason === "length" &&
+				!assistantMsg.content.some((b) => b.type === "toolCall" || (b.type === "text" && b.text.trim().length > 0))
+			) {
+				continue;
+			}
 
 			const toolCalls = assistantMsg.content.filter((b) => b.type === "toolCall") as ToolCall[];
 			if (toolCalls.length > 0) {

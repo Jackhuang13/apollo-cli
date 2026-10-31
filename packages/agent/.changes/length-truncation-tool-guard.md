@@ -1,0 +1,1 @@
+- Blocked partial tool call execution when assistant turns terminate with stopReason=length.

@@ -939,12 +939,16 @@ function parsePersistedIpythonSentAgentMessage(value: unknown): PersistedIpython
 	};
 }
 
+function isIscriptToolName(name: string): boolean {
+	return name === "iscript" || name === "ipython";
+}
+
 function appendSentAgentMessageToToolResult(
 	message: AgentMessage,
 	toolCallId: string,
 	sentMessage: KernelSentAgentMessage,
 ): boolean {
-	if (message.role !== "toolResult" || message.toolName !== "ipython" || message.toolCallId !== toolCallId) {
+	if (message.role !== "toolResult" || !isIscriptToolName(message.toolName) || message.toolCallId !== toolCallId) {
 		return false;
 	}
 	const details = isObjectRecord(message.details) ? message.details : {};
@@ -2145,7 +2149,7 @@ export class AgentSession {
 	}
 
 	private _applyLateIpythonSentAgentMessages(message: AgentMessage): void {
-		if (message.role !== "toolResult" || message.toolName !== "ipython") {
+		if (message.role !== "toolResult" || !isIscriptToolName(message.toolName)) {
 			return;
 		}
 		for (const sentMessage of this._lateIpythonSentAgentMessages.get(message.toolCallId) ?? []) {
@@ -2795,26 +2799,27 @@ export class AgentSession {
 
 	/**
 	 * Goals are pursued through the kernel goal skill, so the only tool the
-	 * model needs is ipython. Force-activate it (including into a live
+	 * model needs is iscript (or ipython). Force-activate it (including into a live
 	 * continuation context) so the model can always reach `goal.complete()`.
 	 */
 	private _ensureGoalRuntimeActive(context?: AgentContext): void {
 		if (!this._includeGoals) {
 			throw new Error("Goals are disabled. Enable goals before using /goal.");
 		}
-		const ipythonTool = this._toolRegistry.get("ipython");
-		if (!ipythonTool) {
-			throw new Error("Goals require the ipython tool, which is not available in this session.");
+		const replTool = this._toolRegistry.get("iscript") ?? this._toolRegistry.get("ipython");
+		if (!replTool) {
+			throw new Error("Goals require the iscript tool, which is not available in this session.");
 		}
 		const activeToolNames = new Set(this.getActiveToolNames());
-		if (!activeToolNames.has("ipython")) {
-			activeToolNames.add("ipython");
+		const hasRepl = activeToolNames.has("iscript") || activeToolNames.has("ipython");
+		if (!hasRepl) {
+			activeToolNames.add(replTool.name);
 			this.setActiveToolsByName([...activeToolNames]);
 		}
 		if (context) {
 			const contextTools = [...(context.tools ?? [])];
-			if (!contextTools.some((tool) => tool.name === "ipython")) {
-				contextTools.push(ipythonTool);
+			if (!contextTools.some((tool) => isIscriptToolName(tool.name))) {
+				contextTools.push(replTool);
 				context.tools = contextTools;
 			}
 		}
@@ -4374,6 +4379,33 @@ export class AgentSession {
 		if (this.queuedActionCount > 0) {
 			return [];
 		}
+
+		// Length-truncation recovery: when a turn terminates with stopReason="length"
+		// and issued 0 tool calls (e.g. runaway thinking exhausted max_tokens),
+		// provide a bounded 1-shot continuation to steer the model out of drafting
+		// full files in <think> and into incremental execution.
+		if (
+			context.message.stopReason === "length" &&
+			context.toolResults.length === 0 &&
+			!signal?.aborted &&
+			this._lengthRecoveryAttempts < 1
+		) {
+			this._lengthRecoveryAttempts++;
+			const recoveryMessage: UserMessage = {
+				role: "user",
+				content: [
+					{
+						type: "text",
+						text:
+							'[length-recovery] Your previous response hit the output token limit (stopReason="length") before completing any action. ' +
+							"Do NOT draft full files or exhaustive line-by-line plans inside <think>. Execute work incrementally in small `iscript` steps (or delegate isolated subtasks via `rlm.spawn`).",
+					},
+				],
+				timestamp: Date.now(),
+			};
+			return [recoveryMessage];
+		}
+
 		const arrivalEpoch = this._sessionInputArrivalEpoch;
 		const goalSnapshot = this._goalState;
 		const goalAccountingStartedAt = this._goalAccountingStartedAt;
@@ -5987,12 +6019,14 @@ export class AgentSession {
 	}
 
 	private _promptSubmissionInFlight = false;
+	private _lengthRecoveryAttempts = 0;
 
 	private async _prompt(text: string, options?: InternalPromptOptions): Promise<void> {
 		// Synchronous preflight guard: from submission until the prompt promise
 		// settles, a model switch must not tear down a routed turn's override
 		// (the routing decision for this turn's images may already be made).
 		this._promptSubmissionInFlight = true;
+		this._lengthRecoveryAttempts = 0;
 		try {
 			return await this._promptInner(text, options);
 		} finally {
@@ -10885,7 +10919,7 @@ export class AgentSession {
 				onBackgroundBashChange: (items) => this._emit({ type: "background_bash_changed", items }),
 			});
 			configuredBaseToolDefinitions = createAllToolDefinitions(this._cwd, {
-				ipython: {
+				iscript: {
 					provisioner: this._ipythonKernelProvisioner,
 					commandPrefix: this.settingsManager.getShellCommandPrefix(),
 					shellPath: this.settingsManager.getShellPath(),

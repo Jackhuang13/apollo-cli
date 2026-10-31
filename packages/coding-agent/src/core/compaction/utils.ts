@@ -60,7 +60,7 @@ export function extractFileOpsFromMessage(message: AgentMessage, fileOps: FileOp
  * default configuration.
  */
 function extractFileOpsFromToolResult(message: AgentMessage, fileOps: FileOperations): void {
-	if (message.role !== "toolResult" || message.toolName !== "ipython") return;
+	if (message.role !== "toolResult" || (message.toolName !== "iscript" && message.toolName !== "ipython")) return;
 	const details =
 		typeof message.details === "object" && message.details !== null && !Array.isArray(message.details)
 			? (message.details as Record<string, unknown>)

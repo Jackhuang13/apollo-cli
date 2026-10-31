@@ -1,0 +1,1 @@
+- Aligned default exposed REPL tool name to iscript and added length truncation recovery with visible warnings.

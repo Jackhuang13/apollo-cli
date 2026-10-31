@@ -21,12 +21,17 @@ export interface AcpSessionUpdate {
 
 /** prime-agent's model-facing tool is the IScript REPL; bash is the secondary escape hatch. */
 export const IPYTHON_TOOL_NAME = "ipython";
+export const ISCRIPT_TOOL_NAME = "iscript";
+
+export function isIscriptToolName(toolName: string): boolean {
+	return toolName === ISCRIPT_TOOL_NAME || toolName === IPYTHON_TOOL_NAME;
+}
 
 export function acpToolKind(toolName: string): AcpToolKind {
+	if (isIscriptToolName(toolName) || toolName === "bash") {
+		return "execute";
+	}
 	switch (toolName) {
-		case IPYTHON_TOOL_NAME:
-		case "bash":
-			return "execute";
 		case "read":
 			return "read";
 		case "edit":
@@ -156,12 +161,12 @@ export function acpUpdatesForSessionEvent(
 			return [];
 
 		case "tool_execution_start": {
-			const cell = event.toolName === IPYTHON_TOOL_NAME ? ipythonCellSource(event.args) : undefined;
+			const cell = isIscriptToolName(event.toolName) ? ipythonCellSource(event.args) : undefined;
 			return [
 				{
 					sessionUpdate: "tool_call",
 					toolCallId: event.toolCallId,
-					title: event.toolName === IPYTHON_TOOL_NAME ? "Python cell" : event.toolName,
+					title: isIscriptToolName(event.toolName) ? "Python cell" : event.toolName,
 					kind: acpToolKind(event.toolName),
 					status: "in_progress" satisfies AcpToolStatus,
 					rawInput: cell !== undefined ? { code: cell } : event.args,
@@ -171,7 +176,7 @@ export function acpUpdatesForSessionEvent(
 
 		case "tool_execution_end": {
 			const text = toolResultText(event.result);
-			const rich = event.toolName === IPYTHON_TOOL_NAME ? ipythonRichOutput(event.result) : undefined;
+			const rich = isIscriptToolName(event.toolName) ? ipythonRichOutput(event.result) : undefined;
 			return [
 				{
 					sessionUpdate: "tool_call_update",

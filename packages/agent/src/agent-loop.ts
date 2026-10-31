@@ -776,6 +776,17 @@ async function prepareToolCall(
 	config: AgentLoopConfig,
 	signal: AbortSignal | undefined,
 ): Promise<PreparedToolCall | ImmediateToolCallOutcome> {
+	if (assistantMessage.stopReason === "length") {
+		return {
+			kind: "immediate",
+			result: createErrorToolResult(
+				`Tool call "${toolCall.name}" was truncated because the response hit max_tokens (stopReason="length"). ` +
+					"The partial arguments were not executed. Retry with a smaller, incremental step instead of generating large payloads in a single turn.",
+			),
+			isError: true,
+		};
+	}
+
 	const tool = currentContext.tools?.find((t) => t.name === toolCall.name);
 	if (!tool) {
 		return {

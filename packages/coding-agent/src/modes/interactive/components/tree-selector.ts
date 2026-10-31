@@ -728,6 +728,8 @@ class TreeList implements Component {
 						result = theme.fg("success", "assistant: ") + textContent;
 					} else if (msgWithContent.stopReason === "aborted") {
 						result = theme.fg("success", "assistant: ") + theme.fg("muted", "(aborted)");
+					} else if (msgWithContent.stopReason === "length") {
+						result = theme.fg("success", "assistant: ") + theme.fg("warning", "(truncated: max tokens)");
 					} else if (msgWithContent.errorMessage) {
 						const errMsg = normalize(msgWithContent.errorMessage).slice(0, 80);
 						result = theme.fg("success", "assistant: ") + theme.fg("error", errMsg);
@@ -876,13 +878,14 @@ class TreeList implements Component {
 					.slice(0, 50);
 				return `[bash: ${cmd}${rawCmd.length > 50 ? "..." : ""}]`;
 			}
+			case "iscript":
 			case "ipython": {
 				const rawCode = String(args.code || "");
 				const code = rawCode
 					.replace(/[\n\t]/g, " ")
 					.trim()
 					.slice(0, 50);
-				return `[ipython: ${code}${rawCode.length > 50 ? "..." : ""}]`;
+				return `[${name}: ${code}${rawCode.length > 50 ? "..." : ""}]`;
 			}
 			default: {
 				// Custom tool - show name and truncated JSON args

@@ -35,6 +35,7 @@ type FakeSession = {
 	_createPreparedTurnAction: ReturnType<typeof vi.fn>;
 	_snapshotAutonomousRuntimeState: () => unknown;
 	_restoreAutonomousRuntimeSnapshot: (snapshot: unknown) => void;
+	_lengthRecoveryAttempts?: number;
 };
 
 const getContinuationMessages = Reflect.get(AgentSession.prototype, "_getContinuationMessages") as (
@@ -525,5 +526,40 @@ describe("autonomous continuation vs active subagents", () => {
 		expect(queued).toBeUndefined();
 		expect(session._autonomousContinuationAwaitsRlmWork).toBe(true);
 		expect(session._autonomousState.continuationsUsed).toBe(0);
+	});
+
+	it.each([
+		{
+			desc: "steers 1-shot recovery continuation when stopReason is length with 0 tool calls",
+			stopReason: "length",
+			toolResults: [],
+			priorAttempts: 0,
+			expectContinuation: true,
+		},
+		{
+			desc: "bounds recovery continuation to max 1 shot",
+			stopReason: "length",
+			toolResults: [],
+			priorAttempts: 1,
+			expectContinuation: false,
+		},
+	])("$desc", async ({ stopReason, toolResults, priorAttempts, expectContinuation }) => {
+		const session = fakeSession({
+			_lengthRecoveryAttempts: priorAttempts,
+			_autonomousState: createAutonomousRuntimeState({ enabled: false }),
+		}) as FakeSession & { _lengthRecoveryAttempts: number };
+		const testContext = {
+			message: { role: "assistant", stopReason } as FakeAssistantMessage,
+			toolResults,
+			newMessages: [],
+		};
+		const msgs = (await getContinuationMessages.call(session, testContext as any)) as any[];
+		if (expectContinuation) {
+			expect(msgs).toHaveLength(1);
+			expect(msgs[0].content[0].text).toContain("[length-recovery]");
+			expect(session._lengthRecoveryAttempts).toBe(1);
+		} else {
+			expect(msgs).toEqual([]);
+		}
 	});
 });

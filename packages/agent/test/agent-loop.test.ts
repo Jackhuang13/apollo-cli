@@ -1963,4 +1963,63 @@ describe("agentLoopContinue with AgentMessage", () => {
 		expect(messages.length).toBe(1);
 		expect(messages[0].role).toBe("assistant");
 	});
+
+	it("blocks executing tool call when assistant message has stopReason=length", async () => {
+		const toolExecute = vi.fn().mockResolvedValue({
+			content: [{ type: "text", text: "executed" }],
+		});
+		const testTool: AgentTool = {
+			name: "iscript",
+			label: "iscript",
+			description: "test tool",
+			parameters: Type.Object({ code: Type.String() }),
+			execute: toolExecute,
+		};
+
+		const context: AgentContext = {
+			systemPrompt: "test",
+			messages: [createUserMessage("run this")],
+			tools: [testTool],
+		};
+
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			convertToLlm: identityConverter,
+		};
+
+		let callCount = 0;
+		const streamFn = () => {
+			const stream = new MockAssistantStream();
+			queueMicrotask(() => {
+				callCount++;
+				if (callCount === 1) {
+					const message = createAssistantMessage(
+						[{ type: "toolCall", id: "c1", name: "iscript", arguments: { code: "print('truncated" } }],
+						"length",
+					);
+					stream.push({ type: "done", reason: "length", message });
+				} else {
+					const message = createAssistantMessage([{ type: "text", text: "recovered" }]);
+					stream.push({ type: "done", reason: "stop", message });
+				}
+			});
+			return stream;
+		};
+
+		const events: AgentEvent[] = [];
+		const stream = agentLoop([createUserMessage("run this")], context, config, undefined, streamFn);
+		for await (const event of stream) {
+			events.push(event);
+		}
+
+		expect(toolExecute).not.toHaveBeenCalled();
+		const toolResultEvent = events.find((e) => e.type === "message_end" && e.message.role === "toolResult");
+		expect(toolResultEvent).toBeDefined();
+		if (toolResultEvent && toolResultEvent.type === "message_end" && toolResultEvent.message.role === "toolResult") {
+			expect(toolResultEvent.message.isError).toBe(true);
+			const text =
+				toolResultEvent.message.content[0]?.type === "text" ? toolResultEvent.message.content[0].text : "";
+			expect(text).toContain('stopReason="length"');
+		}
+	});
 });
