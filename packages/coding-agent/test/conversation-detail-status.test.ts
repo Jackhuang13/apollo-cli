@@ -104,7 +104,8 @@ describe("conversation detail status", () => {
 
 describe("background bash tray label", () => {
 	const now = 1_000_000;
-	const item = { pid: 1, startedAt: now };
+	const item = { pid: 1, startedAt: now - 10_000 };
+	const fresh = { pid: 1, startedAt: now };
 	const daemon = { pid: 2, startedAt: now, timeoutMs: null };
 	it("inserts the label between the heartbeat and model context", () => {
 		initTheme("dark");
@@ -121,6 +122,8 @@ describe("background bash tray label", () => {
 		[[item, item, item], "⚪ 3 Background Running", now + 1_000],
 		[[daemon], undefined],
 		[[item, daemon, daemon], "🟢 1 Background Running"],
+		[[fresh], undefined],
+		[[fresh, item], "🟢 1 Background Running"],
 	])("formats %j as %s", (items, expected, at = now) =>
 		expect(formatBackgroundBashTrayLabel(items, at)).toBe(expected),
 	);

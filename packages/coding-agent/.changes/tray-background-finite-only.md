@@ -1,1 +1,2 @@
 - Changed the background tray indicator to count only finite background commands; long-running `timeout: null` daemons no longer show in the tray.
+- Changed the background tray indicator to appear only after a background command has been running for 3 seconds, so short commands no longer flash briefly in the tray.

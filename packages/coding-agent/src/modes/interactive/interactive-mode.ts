@@ -1217,11 +1217,16 @@ export function isFiniteBackgroundBash(item: BackgroundBashSummary): boolean {
 	return item.timeoutMs !== null;
 }
 
+/** Tasks running shorter than this never reach the tray (no flicker on quick commands). */
+const BACKGROUND_TRAY_MIN_AGE_MS = 3000;
+
 export function formatBackgroundBashTrayLabel(
 	items: readonly BackgroundBashSummary[],
 	now: number,
 ): string | undefined {
-	const finite = items.filter(isFiniteBackgroundBash);
+	const finite = items.filter(
+		(item) => isFiniteBackgroundBash(item) && now - item.startedAt >= BACKGROUND_TRAY_MIN_AGE_MS,
+	);
 	if (finite.length === 0) return undefined;
 	const dot = Math.floor(now / 1000) % 2 === 0 ? "🟢" : "⚪";
 	return `${dot} ${finite.length} Background Running`;
