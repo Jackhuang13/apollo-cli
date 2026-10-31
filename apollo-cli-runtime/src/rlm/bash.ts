@@ -639,7 +639,13 @@ export class BashHandle implements PromiseLike<BashResult> {
 		const cellBarrier = replBridge.currentCellCompletionBarrier();
 		if (!cellBarrier) return;
 		const activityId = randomBytes(16).toString("hex");
-		const activity = { id: activityId, pid: this._pid, active: true, command: cappedCommand(this.command) };
+		const activity = {
+			id: activityId,
+			pid: this._pid,
+			active: true,
+			command: cappedCommand(this.command),
+			timeoutMs: this.scheduledTimeoutMs,
+		};
 		replBridge.emit({
 			[BASH_ACTIVITY_MIME]: activity,
 			[LEGACY_BASH_ACTIVITY_MIME]: activity,

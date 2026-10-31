@@ -39,6 +39,8 @@ export interface BackgroundBashSummary {
 	command?: string;
 	/** Wall time (Date.now()) the host first observed the handle active. */
 	startedAt: number;
+	/** Scheduled timeout in ms; null = indefinite (daemon service); undefined = older runtime, treated as finite. */
+	timeoutMs?: number | null;
 }
 
 /** Where and how to persist the kernel's user namespace so it survives resume. */

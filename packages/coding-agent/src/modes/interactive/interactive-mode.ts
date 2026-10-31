@@ -1212,13 +1212,19 @@ function formatElapsedSeconds(seconds: number): string {
 	return `${hours}h ${remainingMinutes.toString().padStart(2, "0")}m`;
 }
 
+/** True when the handle is expected to finish (daemon services are spawned with timeout: null). */
+export function isFiniteBackgroundBash(item: BackgroundBashSummary): boolean {
+	return item.timeoutMs !== null;
+}
+
 export function formatBackgroundBashTrayLabel(
 	items: readonly BackgroundBashSummary[],
 	now: number,
 ): string | undefined {
-	if (items.length === 0) return undefined;
+	const finite = items.filter(isFiniteBackgroundBash);
+	if (finite.length === 0) return undefined;
 	const dot = Math.floor(now / 1000) % 2 === 0 ? "🟢" : "⚪";
-	return `${dot} ${items.length} Background Running`;
+	return `${dot} ${finite.length} Background Running`;
 }
 
 /**
@@ -6604,7 +6610,7 @@ export class InteractiveMode {
 	}
 
 	private updateBackgroundBashTrayTimer(items: BackgroundBashSummary[]): void {
-		if (items.length > 0) {
+		if (items.some(isFiniteBackgroundBash)) {
 			if (!this.backgroundBashTrayTimer) {
 				this.backgroundBashTrayTimer = setInterval(() => {
 					this.subagentSummaryLine.invalidate();

@@ -323,7 +323,9 @@ export class ReplKernelManager {
 	}
 
 	getBackgroundBashSummaries(): BackgroundBashSummary[] {
-		return [...this.backgroundBashHandles.values()].sort((a, b) => a.startedAt - b.startedAt);
+		return [...this.backgroundBashHandles.values()]
+			.sort((a, b) => a.startedAt - b.startedAt)
+			.map((item) => ({ ...item }));
 	}
 
 	private emitBackgroundBashChange(): void {
@@ -1009,6 +1011,14 @@ export class ReplKernelManager {
 								typeof activity.command === "string" && activity.command.length > 0
 									? activity.command
 									: undefined,
+							timeoutMs:
+								activity.timeoutMs === null
+									? null
+									: typeof activity.timeoutMs === "number" &&
+											Number.isSafeInteger(activity.timeoutMs) &&
+											activity.timeoutMs > 0
+										? activity.timeoutMs
+										: undefined,
 							startedAt: Date.now(),
 						});
 						this.emitBackgroundBashChange();

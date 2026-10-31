@@ -20,6 +20,7 @@ interface DetailMode {
 	setToolsExpanded(expanded: boolean): void;
 	connectionState: { thinkingLevel: string; backgroundBash?: BackgroundBashSummary[] };
 }
+type TrayTimerMode = DetailMode & { syncBackgroundBashTray(): void; backgroundBashTrayTimer?: unknown };
 function createMode(): DetailMode {
 	return Object.assign(Object.create(InteractiveMode.prototype), {
 		toolOutputExpanded: false,
@@ -104,6 +105,7 @@ describe("conversation detail status", () => {
 describe("background bash tray label", () => {
 	const now = 1_000_000;
 	const item = { pid: 1, startedAt: now };
+	const daemon = { pid: 2, startedAt: now, timeoutMs: null };
 	it("inserts the label between the heartbeat and model context", () => {
 		initTheme("dark");
 		const mode = createMode();
@@ -117,7 +119,29 @@ describe("background bash tray label", () => {
 		[[item], "🟢 1 Background Running"],
 		[[item, item], "🟢 2 Background Running"],
 		[[item, item, item], "⚪ 3 Background Running", now + 1_000],
+		[[daemon], undefined],
+		[[item, daemon, daemon], "🟢 1 Background Running"],
 	])("formats %j as %s", (items, expected, at = now) =>
 		expect(formatBackgroundBashTrayLabel(items, at)).toBe(expected),
 	);
+	it("blinks only while a finite handle is live", () => {
+		vi.useFakeTimers();
+		try {
+			const mode = Object.assign(createMode(), {
+				subagentSummaryLine: { invalidate: vi.fn() },
+			}) as unknown as TrayTimerMode;
+			const set = (backgroundBash: BackgroundBashSummary[]) => {
+				mode.connectionState = { thinkingLevel: "high", backgroundBash };
+				mode.syncBackgroundBashTray();
+			};
+			set([daemon]);
+			expect(mode.backgroundBashTrayTimer).toBeUndefined();
+			set([item, daemon]);
+			expect(mode.backgroundBashTrayTimer).toBeDefined();
+			set([daemon]);
+			expect(mode.backgroundBashTrayTimer).toBeUndefined();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
 });

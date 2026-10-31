@@ -46,7 +46,7 @@ test("bash() activity events carry the command, capped like the completion notic
 	await withActivityRecorder(async (awaitMatch) => {
 		const handle1 = bash("sleep 0.1");
 		const longCommand = `sleep 0.1 && echo ${"x".repeat(1197)}`;
-		const handle2 = bash(longCommand);
+		const handle2 = bash(longCommand, { timeout: null });
 		const [a1, , a2, i2] = await Promise.all([
 			awaitMatch((a) => a.pid === handle1.pid && a.active === true),
 			awaitMatch((a) => a.pid === handle1.pid && a.active === false),
@@ -57,6 +57,7 @@ test("bash() activity events carry the command, capped like the completion notic
 		assert.equal(a1.command, "sleep 0.1");
 		assert.equal(a2.command, truncated);
 		assert.equal(i2.command, truncated);
+		assert.deepEqual([a1.timeoutMs, a2.timeoutMs, i2.timeoutMs], [600_000, null, null]);
 	});
 });
 

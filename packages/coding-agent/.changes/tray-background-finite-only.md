@@ -1,0 +1,1 @@
+- Changed the background tray indicator to count only finite background commands; long-running `timeout: null` daemons no longer show in the tray.

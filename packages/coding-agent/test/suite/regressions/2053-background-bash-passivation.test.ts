@@ -326,20 +326,28 @@ describe("kernel bash activity validation", () => {
 		const deliver = (data: Record<string, unknown>) => deliverActivity(kernel, data);
 		const activeId = "a".repeat(32);
 		const secondId = "b".repeat(32);
-		deliver({ [BASH_ACTIVITY_DISPLAY_MIME]: { id: activeId, pid: 42, active: true, command: "npm test" } });
-		deliver({ [BASH_ACTIVITY_DISPLAY_MIME]: { id: secondId, pid: 43, active: true } });
+		deliver({
+			[BASH_ACTIVITY_DISPLAY_MIME]: { id: activeId, pid: 42, active: true, command: "npm test", timeoutMs: 600_000 },
+		});
+		deliver({ [BASH_ACTIVITY_DISPLAY_MIME]: { id: secondId, pid: 43, active: true, timeoutMs: null } });
 		const sum = kernel.getBackgroundBashSummaries();
 		expect(sum.map((item) => [item.pid, item.command])).toEqual([
 			[42, "npm test"],
 			[43, undefined],
 		]);
+		expect(sum.map((s) => s.timeoutMs)).toEqual([600_000, null]);
+		expect(changes.at(-1)!.map((s) => s.timeoutMs)).toEqual([600_000, null]);
 		// Duplicate active for a tracked id must not re-fire or duplicate.
 		deliver({ [BASH_ACTIVITY_DISPLAY_MIME]: { id: activeId, pid: 42, active: true, command: "npm test" } });
-		deliver({ [BASH_ACTIVITY_DISPLAY_MIME]: { id: secondId, pid: 43, active: false } });
+		deliver({ [BASH_ACTIVITY_DISPLAY_MIME]: { id: "c".repeat(32), pid: 44, active: true, timeoutMs: -1 } });
+		expect(kernel.getBackgroundBashSummaries().at(-1)?.timeoutMs).toBeUndefined();
 		deliver({ [BASH_ACTIVITY_DISPLAY_MIME]: { id: activeId, pid: 42, active: false } });
+		deliver({ [BASH_ACTIVITY_DISPLAY_MIME]: { id: "c".repeat(32), pid: 44, active: false } });
+		expect(kernel.hasBackgroundWork).toBe(true);
+		deliver({ [BASH_ACTIVITY_DISPLAY_MIME]: { id: secondId, pid: 43, active: false } });
 		expect(kernel.hasBackgroundWork).toBe(false);
 		expect(settled).toHaveBeenCalledTimes(1);
-		expect(changes.map((items) => items.map((item) => item.pid))).toEqual([[42], [42, 43], [42], []]);
+		expect(changes.map((c) => c.map((i) => i.pid))).toEqual([[42], [42, 43], [42, 43, 44], [43, 44], [43], []]);
 		expect(changes[0][0].command).toBe("npm test");
 		// Callback snapshots are copies; mutating them must not leak into kernel state.
 		changes[0][0].pid = 0;
