@@ -168,6 +168,38 @@ describe("edit skill not-found hardening", () => {
 		expect(message).toContain("First diff at char 33 (file line 4, col 13)");
 	});
 
+	it("not-found diagnostics report correct line and col when the diff is on the first window line", () => {
+		const file = join(tempDir, "missing-first-line.txt");
+		writeFileSync(file, "alpha\nconst eps = 3;\nconst zeta = 1;\n");
+		let message = "";
+		try {
+			edit(file, "const eps = 2;\nconst zeta = 1;", "nope");
+		} catch (err) {
+			message = (err as Error).message;
+		}
+		expect(message).toContain("First diff at char 12 (file line 2, col 13)");
+	});
+
+	it("not-found diagnostics still find the closest line in the second half of large files", () => {
+		const file = join(tempDir, "missing-large-file.txt");
+		const rows: string[] = [];
+		for (let i = 0; i < 2500; i++) {
+			rows.push(
+				i === 2000
+					? "const markerLine = 1;"
+					: `filler line ${i} with enough padding to pass the ratio filter easily`,
+			);
+		}
+		writeFileSync(file, rows.join("\n"));
+		let message = "";
+		try {
+			edit(file, "const markerLine = 2;", "nope");
+		} catch (err) {
+			message = (err as Error).message;
+		}
+		expect(message).toContain("file line 2001");
+	});
+
 	it("not-found failure keeps the prefix and reports first diff plus a copyable window", () => {
 		const file = join(tempDir, "missing.txt");
 		writeFileSync(file, "alpha\nconst betaLine = 1;\ngamma\n");

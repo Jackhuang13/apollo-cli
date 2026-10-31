@@ -155,6 +155,16 @@ function _mapFuzzyChars(text: string): string {
 		.replace(/[\u00A0\u2002-\u200A\u202F\u205F\u3000]/g, " ");
 }
 
+/** Same per-line norm string as _buildFuzzyIndexMap, without the per-unit offset arrays. */
+function _fuzzyNormPreview(text: string): string {
+	const parts: string[] = [];
+	const lines = text.split("\n");
+	for (let i = 0; i < lines.length; i++) {
+		parts.push(_mapFuzzyChars(lines[i]!.trimEnd().normalize("NFKC")));
+		if (i < lines.length - 1) parts.push("\n");
+	}
+	return parts.join("");
+}
 interface FuzzyIndexMap {
 	norm: string;
 	/** Original start offset (UTF-16, inclusive) for each UTF-16 unit of norm. */
@@ -252,14 +262,14 @@ function _firstDiffIndex(a: string, b: string): number {
 
 function _lineColAt(content: string, index: number): { line: number; col: number } {
 	let line = 1;
-	let last = 0;
-	while (last < index) {
-		const nl = content.indexOf("\n", last);
-		if (nl === -1) break;
-		last = nl + 1;
+	let lineStart = 0;
+	while (lineStart <= index) {
+		const nl = content.indexOf("\n", lineStart);
+		if (nl === -1 || nl >= index) break;
+		lineStart = nl + 1;
 		line++;
 	}
-	return { line, col: index - last + 1 };
+	return { line, col: index - lineStart + 1 };
 }
 
 function _bigramDice(a: string, b: string): number {
@@ -286,6 +296,49 @@ function _bigramDice(a: string, b: string): number {
 	return (2 * common) / (aTotal + bTotal);
 }
 
+/**
+ * Line indices worth a full bigram-Dice score. Files up to 2000 lines scan
+ * every line (the length-ratio filter is lossless for the 0.4 threshold).
+ * Larger files match trigram probes first so the hard-fail path stays in the
+ * tens of milliseconds; if no probe hits, a bounded ratio pass is the fallback.
+ */
+function _candidateLineIndices(fileLines: string[], anchor: string): number[] {
+	const anchorLen = anchor.length;
+	if (fileLines.length <= 2000) {
+		const all: number[] = [];
+		for (let i = 0; i < fileLines.length; i++) {
+			const len = fileLines[i]!.trim().length;
+			if (len <= 4 * anchorLen && len * 4 >= anchorLen) all.push(i);
+		}
+		return all;
+	}
+	for (const probe of _anchorProbes(anchor)) {
+		const found: number[] = [];
+		for (let i = 0; i < fileLines.length && found.length < 4000; i++) {
+			const raw = fileLines[i]!;
+			if (raw.length > 4 * anchorLen + 8 || raw.length * 4 < anchorLen) continue;
+			if (raw.includes(probe)) found.push(i);
+		}
+		if (found.length > 0) return found;
+	}
+	const fallback: number[] = [];
+	for (let i = 0; i < fileLines.length && fallback.length < 1000; i++) {
+		const raw = fileLines[i]!;
+		if (raw.length <= 4 * anchorLen + 8 && raw.length * 4 >= anchorLen) fallback.push(i);
+	}
+	return fallback;
+}
+
+function _anchorProbes(anchor: string): string[] {
+	if (anchor.length < 3) return [];
+	const mid = anchor.length >> 1;
+	const probes = [anchor.slice(mid, mid + 3), anchor.slice(0, 3), anchor.slice(anchor.length - 3)];
+	const unique: string[] = [];
+	for (const p of probes) {
+		if (p.length === 3 && !unique.includes(p)) unique.push(p);
+	}
+	return unique;
+}
 function _buildNotFoundDiagnostics(content: string, normOld: string): string {
 	const oldLines = normOld.split("\n");
 	const fileLines = content.split("\n");
@@ -310,11 +363,11 @@ function _buildNotFoundDiagnostics(content: string, normOld: string): string {
 	let bestLine = -1;
 	let bestScore = 0;
 	if (anchor) {
-		for (let i = 0; i < fileLines.length; i++) {
-			const score = _bigramDice(fileLines[i]!.trim(), anchor);
+		for (const lineIdx of _candidateLineIndices(fileLines, anchor)) {
+			const score = _bigramDice(fileLines[lineIdx]!.trim(), anchor);
 			if (score > bestScore) {
 				bestScore = score;
-				bestLine = i;
+				bestLine = lineIdx;
 			}
 		}
 	}
@@ -495,9 +548,11 @@ function _applySingleReplacement(
 		}
 
 		// Fuzzy: locate on normalized text, splice the original region only.
-		const fuzzyMap = _buildFuzzyIndexMap(content);
+		// The full index map allocates an offset pair per code unit of the file, so gate it with a
+		// per-line preview that builds the identical norm string.
 		const fuzzyOldText = _normalizeForFuzzyMatch(normOld);
-		if (fuzzyOldText) {
+		if (fuzzyOldText && _fuzzyNormPreview(content).includes(fuzzyOldText)) {
+			const fuzzyMap = _buildFuzzyIndexMap(content);
 			const fuzzyIndex = fuzzyMap.norm.indexOf(fuzzyOldText);
 			if (fuzzyIndex !== -1) {
 				const fuzzyCount = _countOccurrences(fuzzyMap.norm, fuzzyOldText);

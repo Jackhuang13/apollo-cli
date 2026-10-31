@@ -1,0 +1,1 @@
+- Fixed the `edit` skill's not-found diagnostics reporting a wrong line and negative column for some multi-line mismatches, and cut not-found latency on large files from seconds to milliseconds.
