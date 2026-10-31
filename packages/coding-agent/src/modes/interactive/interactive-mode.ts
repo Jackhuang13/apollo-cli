@@ -1217,16 +1217,27 @@ export function isFiniteBackgroundBash(item: BackgroundBashSummary): boolean {
 	return item.timeoutMs !== null;
 }
 
-/** Tasks running shorter than this never reach the tray (no flicker on quick commands). */
-const BACKGROUND_TRAY_MIN_AGE_MS = 3000;
+/** True when the item can reach the tray at all; also gates the 1s blink timer. */
+function trayEligible(item: BackgroundBashSummary): boolean {
+	if (!isFiniteBackgroundBash(item)) return false;
+	// Pre-marker runtimes carry no background field; they stay eligible by spawn age.
+	return item.background === undefined || item.background;
+}
+
+/** Tasks running shorter than this after becoming background never reach the tray (no flicker). */
+const BACKGROUND_TRAY_MIN_AGE_MS = 2000;
+/** Pre-marker runtimes display from spawn as before; keep their min age when unmarked. */
+const LEGACY_TRAY_MIN_AGE_MS = 3000;
 
 export function formatBackgroundBashTrayLabel(
 	items: readonly BackgroundBashSummary[],
 	now: number,
 ): string | undefined {
-	const finite = items.filter(
-		(item) => isFiniteBackgroundBash(item) && now - item.startedAt >= BACKGROUND_TRAY_MIN_AGE_MS,
-	);
+	const finite = items.filter((item) => {
+		if (!trayEligible(item)) return false;
+		if (item.background === undefined) return now - item.startedAt >= LEGACY_TRAY_MIN_AGE_MS;
+		return now - (item.backgroundSinceAt ?? item.startedAt) >= BACKGROUND_TRAY_MIN_AGE_MS;
+	});
 	if (finite.length === 0) return undefined;
 	const dot = Math.floor(now / 1000) % 2 === 0 ? "🟢" : "⚪";
 	return `${dot} ${finite.length} Background Running`;
@@ -6615,7 +6626,7 @@ export class InteractiveMode {
 	}
 
 	private updateBackgroundBashTrayTimer(items: BackgroundBashSummary[]): void {
-		if (items.some(isFiniteBackgroundBash)) {
+		if (items.some(trayEligible)) {
 			if (!this.backgroundBashTrayTimer) {
 				this.backgroundBashTrayTimer = setInterval(() => {
 					this.subagentSummaryLine.invalidate();

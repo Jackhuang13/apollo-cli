@@ -645,7 +645,30 @@ export class BashHandle implements PromiseLike<BashResult> {
 			active: true,
 			command: cappedCommand(this.command),
 			timeoutMs: this.scheduledTimeoutMs,
+			background: false,
 		};
+		// Independent of the completion path on purpose: it must not delay the
+		// inactive event (short tasks that finish before the cell ends), and it
+		// only marks the handle background when the creating cell ends first.
+		void (async () => {
+			try {
+				await cellBarrier;
+				if (
+					!this._reaped &&
+					!this._awaitedByCreatingCell &&
+					!this._resultConsumed &&
+					replBridge?.isActive()
+				) {
+					const backgrounded = { ...activity, background: true };
+					replBridge.emit({
+						[BASH_ACTIVITY_MIME]: backgrounded,
+						[LEGACY_BASH_ACTIVITY_MIME]: backgrounded,
+					});
+				}
+			} catch {
+				// Standalone or closed bridge
+			}
+		})();
 		replBridge.emit({
 			[BASH_ACTIVITY_MIME]: activity,
 			[LEGACY_BASH_ACTIVITY_MIME]: activity,

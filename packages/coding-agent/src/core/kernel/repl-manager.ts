@@ -1003,8 +1003,10 @@ export class ReplKernelManager {
 				activity.pid > 0 &&
 				typeof activity.active === "boolean"
 			) {
+				const background = typeof activity.background === "boolean" ? activity.background : undefined;
 				if (activity.active) {
-					if (!this.backgroundBashHandles.has(activity.id)) {
+					const existing = this.backgroundBashHandles.get(activity.id);
+					if (!existing) {
 						this.backgroundBashHandles.set(activity.id, {
 							pid: activity.pid,
 							command:
@@ -1020,7 +1022,14 @@ export class ReplKernelManager {
 										? activity.timeoutMs
 										: undefined,
 							startedAt: Date.now(),
+							background,
+							backgroundSinceAt: background === true ? Date.now() : undefined,
 						});
+						this.emitBackgroundBashChange();
+					} else if (background === true && existing.background !== true) {
+						// Post-cell re-emit: the creating cell ended without awaiting the handle.
+						existing.background = true;
+						existing.backgroundSinceAt = Date.now();
 						this.emitBackgroundBashChange();
 					}
 				} else if (this.backgroundBashHandles.get(activity.id)?.pid === activity.pid) {

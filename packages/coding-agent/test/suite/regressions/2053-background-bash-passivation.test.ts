@@ -359,6 +359,51 @@ describe("kernel bash activity validation", () => {
 		expect(settled).toHaveBeenCalledTimes(2);
 	});
 
+	it("marks a handle background on the post-cell re-emit and keeps legacy entries unchanged", async () => {
+		const changes: BackgroundBashSummary[][] = [];
+		const kernel = new ReplKernelManager({
+			onBackgroundBashChange: (items) => changes.push(items.map((item) => ({ ...item }))),
+		});
+		const deliver = (data: Record<string, unknown>) => deliverActivity(kernel, data);
+		const id = "d".repeat(32);
+		deliver({
+			[BASH_ACTIVITY_DISPLAY_MIME]: {
+				id,
+				pid: 71,
+				active: true,
+				command: "npm test",
+				timeoutMs: 600_000,
+				background: false,
+			},
+		});
+		expect(changes.length).toBe(1);
+		let sum = kernel.getBackgroundBashSummaries();
+		expect(sum[0].background).toBe(false);
+		expect(sum[0].backgroundSinceAt).toBeUndefined();
+		const before = Date.now();
+		deliver({ [BASH_ACTIVITY_DISPLAY_MIME]: { id, pid: 71, active: true, background: true } });
+		sum = kernel.getBackgroundBashSummaries();
+		expect(sum[0].background).toBe(true);
+		expect(sum[0].backgroundSinceAt).toBeGreaterThanOrEqual(before);
+		expect(sum[0].command).toBe("npm test");
+		expect(changes.length).toBe(2);
+		// Duplicate background re-emit must not re-fire or reset the age.
+		const sinceAt = sum[0].backgroundSinceAt;
+		deliver({ [BASH_ACTIVITY_DISPLAY_MIME]: { id, pid: 71, active: true, background: true } });
+		expect(changes.length).toBe(2);
+		expect(kernel.getBackgroundBashSummaries()[0].backgroundSinceAt).toBe(sinceAt);
+		// Legacy runtime events (no background field) keep the pre-marker shape.
+		const legacyId = "e".repeat(32);
+		deliver({ [BASH_ACTIVITY_DISPLAY_MIME]: { id: legacyId, pid: 72, active: true, timeoutMs: 600_000 } });
+		const legacy = kernel.getBackgroundBashSummaries().find((item) => item.pid === 72);
+		expect(legacy?.background).toBeUndefined();
+		expect(legacy?.backgroundSinceAt).toBeUndefined();
+		deliver({ [BASH_ACTIVITY_DISPLAY_MIME]: { id, pid: 71, active: false } });
+		deliver({ [BASH_ACTIVITY_DISPLAY_MIME]: { id: legacyId, pid: 72, active: false } });
+		expect(kernel.hasBackgroundWork).toBe(false);
+		await kernel.shutdown();
+	});
+
 	it("session backgroundBashSummaries mirrors the kernel manager's live background handles", async () => {
 		const harness = await createHarness({ tools: [] });
 		const session = harness.session;

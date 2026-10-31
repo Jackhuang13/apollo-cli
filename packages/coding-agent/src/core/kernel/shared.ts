@@ -41,6 +41,10 @@ export interface BackgroundBashSummary {
 	startedAt: number;
 	/** Scheduled timeout in ms; null = indefinite (daemon service); undefined = older runtime, treated as finite. */
 	timeoutMs?: number | null;
+	/** Newer runtimes: true once the creating cell ended without awaiting the handle. */
+	background?: boolean;
+	/** Wall time (Date.now()) the host observed the handle become background. */
+	backgroundSinceAt?: number;
 }
 
 /** Where and how to persist the kernel's user namespace so it survives resume. */

@@ -3,7 +3,14 @@ import assert from "node:assert/strict";
 import { _registerReplBridge, BASH_ACTIVITY_MIME, bash } from "../src/rlm/bash.ts";
 
 function withActivityRecorder(
-	fn: (awaitMatch: (pred: (a: Record<string, unknown>) => boolean) => Promise<Record<string, unknown>>) => Promise<void>,
+	fn: (
+		ctx: {
+			activities: Record<string, unknown>[];
+			awaitMatch: (pred: (a: Record<string, unknown>) => boolean) => Promise<Record<string, unknown>>;
+		},
+		options?: { barrier?: () => Promise<void> | null },
+	) => Promise<void>,
+	options?: { barrier?: () => Promise<void> | null },
 ): Promise<void> {
 	const activities: Record<string, unknown>[] = [];
 	const waiters = new Set<() => void>();
@@ -17,7 +24,7 @@ function withActivityRecorder(
 		},
 		hostRequest: async () => ({ status: "ok" }),
 		sendRawEvent: () => {},
-		currentCellCompletionBarrier: () => Promise.resolve(),
+		currentCellCompletionBarrier: () => options?.barrier?.() ?? Promise.resolve(),
 	});
 	const awaitMatch = (pred: (a: Record<string, unknown>) => boolean) =>
 		new Promise<Record<string, unknown>>((resolve) => {
@@ -31,7 +38,7 @@ function withActivityRecorder(
 			waiters.add(check);
 			check();
 		});
-	return fn(awaitMatch).finally(() =>
+	return fn({ activities, awaitMatch }, options).finally(() =>
 		_registerReplBridge({
 			isActive: () => false,
 			emit: () => {},
@@ -43,7 +50,7 @@ function withActivityRecorder(
 }
 
 test("bash() activity events carry the command, capped like the completion notice", async () => {
-	await withActivityRecorder(async (awaitMatch) => {
+	await withActivityRecorder(async ({ awaitMatch }) => {
 		const handle1 = bash("sleep 0.1");
 		const longCommand = `sleep 0.1 && echo ${"x".repeat(1197)}`;
 		const handle2 = bash(longCommand, { timeout: null });
@@ -59,6 +66,61 @@ test("bash() activity events carry the command, capped like the completion notic
 		assert.equal(i2.command, truncated);
 		assert.deepEqual([a1.timeoutMs, a2.timeoutMs, i2.timeoutMs], [600_000, null, null]);
 	});
+});
+
+test("bash() marks the handle background when the creating cell ends while it is still running", async () => {
+	let releaseBarrier: () => void = () => {};
+	const barrier = new Promise<void>((resolve) => (releaseBarrier = resolve));
+	await withActivityRecorder(
+		async ({ awaitMatch, activities }) => {
+			const handle = bash("sleep 5");
+			const spawn = await awaitMatch((a) => a.pid === handle.pid && a.active === true);
+			assert.equal(spawn.background, false);
+			releaseBarrier(); // the creating cell ends; the handle was never awaited
+			const bg = await awaitMatch((a) => a.pid === handle.pid && a.background === true);
+			assert.equal(bg.id, spawn.id);
+			assert.equal(bg.active, true);
+			assert.equal(bg.timeoutMs, 600_000);
+			handle.kill();
+			const result = await handle;
+			assert.notEqual(result.exit_code, 0);
+			await awaitMatch((a) => a.pid === handle.pid && a.active === false);
+		},
+		{ barrier: () => barrier },
+	);
+});
+
+test("bash() does not mark background when the creating cell awaits the handle", async () => {
+	let releaseBarrier: () => void = () => {};
+	const barrier = new Promise<void>((resolve) => (releaseBarrier = resolve));
+	await withActivityRecorder(
+		async ({ awaitMatch, activities }) => {
+			const handle = bash("sleep 0.2");
+			await awaitMatch((a) => a.pid === handle.pid && a.active === true);
+			const result = await handle; // the creating cell blocks until it finishes
+			assert.equal(result.exit_code, 0);
+			releaseBarrier();
+			await new Promise((resolve) => setTimeout(resolve, 50));
+			assert.equal(activities.some((a) => a.pid === handle.pid && a.background === true), false);
+		},
+		{ barrier: () => barrier },
+	);
+});
+
+test("bash() does not mark background when the process exits before the cell ends", async () => {
+	let releaseBarrier: () => void = () => {};
+	const barrier = new Promise<void>((resolve) => (releaseBarrier = resolve));
+	await withActivityRecorder(
+		async ({ awaitMatch, activities }) => {
+			const handle = bash("sleep 0.2");
+			await awaitMatch((a) => a.pid === handle.pid && a.active === true);
+			await new Promise((resolve) => setTimeout(resolve, 400)); // exits while the cell is still open
+			releaseBarrier();
+			await awaitMatch((a) => a.pid === handle.pid && a.active === false);
+			assert.equal(activities.some((a) => a.pid === handle.pid && a.background === true), false);
+		},
+		{ barrier: () => barrier },
+	);
 });
 
 test("bash() await returns result and exit code", async () => {

@@ -107,6 +107,10 @@ describe("background bash tray label", () => {
 	const item = { pid: 1, startedAt: now - 10_000 };
 	const fresh = { pid: 1, startedAt: now };
 	const daemon = { pid: 2, startedAt: now, timeoutMs: null };
+	const foregroundOld = { pid: 3, startedAt: now - 10_000, background: false };
+	const bgYoung = { pid: 4, startedAt: now - 10_000, background: true, backgroundSinceAt: now - 1_999 };
+	const bgOld = { pid: 5, startedAt: now - 10_000, background: true, backgroundSinceAt: now - 2_000 };
+	const bgDaemonOld = { pid: 6, startedAt: now, timeoutMs: null, background: true, backgroundSinceAt: now - 5_000 };
 	it("inserts the label between the heartbeat and model context", () => {
 		initTheme("dark");
 		const mode = createMode();
@@ -124,6 +128,11 @@ describe("background bash tray label", () => {
 		[[item, daemon, daemon], "🟢 1 Background Running"],
 		[[fresh], undefined],
 		[[fresh, item], "🟢 1 Background Running"],
+		[[foregroundOld], undefined],
+		[[bgYoung], undefined],
+		[[bgOld], "🟢 1 Background Running"],
+		[[bgDaemonOld], undefined],
+		[[foregroundOld, bgOld], "🟢 1 Background Running"],
 	])("formats %j as %s", (items, expected, at = now) =>
 		expect(formatBackgroundBashTrayLabel(items, at)).toBe(expected),
 	);
@@ -138,6 +147,8 @@ describe("background bash tray label", () => {
 				mode.syncBackgroundBashTray();
 			};
 			set([daemon]);
+			expect(mode.backgroundBashTrayTimer).toBeUndefined();
+			set([{ ...item, background: false }]);
 			expect(mode.backgroundBashTrayTimer).toBeUndefined();
 			set([item, daemon]);
 			expect(mode.backgroundBashTrayTimer).toBeDefined();

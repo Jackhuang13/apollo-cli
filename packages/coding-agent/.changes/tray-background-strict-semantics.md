@@ -1,0 +1,1 @@
+- Changed the background tray indicator to show a bash command only after the cell that started it ended without waiting for it, plus a 2 second grace period, so the tray no longer counts commands the current task is still awaiting. Runtimes without the new marker keep the previous 3 second behavior.
