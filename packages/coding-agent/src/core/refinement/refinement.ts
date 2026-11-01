@@ -172,7 +172,7 @@ replace the faulty editable entries. Never edit source files directly. Output
 JSON only with this exact shape:
 
 {
-  "summary": "one sentence",
+  "summary": "one past-tense sentence describing what was recorded, updated, or removed",
   "rationale": "why these edits are justified by trajectory evidence",
   "expectedOutcome": "what should improve and how to validate it",
   "edits": [
@@ -533,16 +533,26 @@ function compactText(text: string, maxLength: number): string {
 	return `${normalized.slice(0, Math.max(0, maxLength - 3))}...`;
 }
 
-/** Notice body in digest notation: trigger line plus applied edits as `action kind [scope:id] title: content`; rollbacks print via their rollback summaries. */
+/** Fixed first line of every refinement notice: the edits below are already persisted and must not be re-executed. */
+export const REFINEMENT_NOTICE_MARKER =
+	"Applied (already persisted; do not re-execute). To change an entry, update it by id; do not create it again.";
+
+/** Notice body in digest notation: fixed "Applied" marker line, the summary, then applied edits as `created|updated|deleted kind [scope:id] title: content`; rollbacks print via their rollback summaries. */
+const NOTICE_PAST_TENSE_ACTION: Record<RefinementAction, string> = {
+	create: "created",
+	update: "updated",
+	delete: "deleted",
+};
+
 export function formatRefinementNoticeBody(result: RefinementResult): string {
-	const lines = [compactText(result.summary, DEFAULT_OVERVIEW_CONTENT_LIMIT)];
+	const lines = [REFINEMENT_NOTICE_MARKER, compactText(result.summary, DEFAULT_OVERVIEW_CONTENT_LIMIT)];
 	for (const edit of result.appliedEdits) {
 		if (!edit.applied) continue;
 		const entry = edit.after ?? edit.before;
 		const scope = entry?.scope ?? result.scope ?? "local";
 		const malformation = entry ? harnessEntryMalformation(entry) : undefined;
 		lines.push(
-			`- ${edit.action} ${edit.kind} [${scope}:${edit.id}] ${malformation ? edit.id : (entry?.title ?? edit.id)}: ${compactText(
+			`- ${NOTICE_PAST_TENSE_ACTION[edit.action]} ${edit.kind} [${scope}:${edit.id}] ${malformation ? edit.id : (entry?.title ?? edit.id)}: ${compactText(
 				malformation ? "" : (entry?.content ?? ""),
 				DEFAULT_OVERVIEW_CONTENT_LIMIT,
 			)}${malformation ? ` (skipped malformed entry: ${malformation})` : ""}`,

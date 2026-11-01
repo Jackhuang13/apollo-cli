@@ -1,0 +1,1 @@
+- Fixed `[auto-refinement]` notices to state explicitly that the edit was already applied and to update (not re-create) the entry, so the agent no longer re-executes applied refinements.

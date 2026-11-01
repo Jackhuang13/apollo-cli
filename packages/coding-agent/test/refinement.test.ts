@@ -19,6 +19,7 @@ import {
 	applyRefinementProposal,
 	computeHarnessEntryMultiplier,
 	formatHarnessStateForPrompt,
+	formatRefinementNoticeBody,
 	getGlobalHarnessStateDir,
 	getHarnessStatePath,
 	getLocalHarnessStateDir,
@@ -34,6 +35,7 @@ import {
 	mergeHarnessStates,
 	mergeRefinementHistory,
 	planRefinement,
+	REFINEMENT_NOTICE_MARKER,
 	type RefinementAction,
 	type RefinementKind,
 	type RefinementProposal,
@@ -44,23 +46,16 @@ import {
 } from "../src/core/refinement/index.js";
 import type { CustomEntry } from "../src/core/session-manager.js";
 
-const { completeSimpleMock } = vi.hoisted(() => ({
-	completeSimpleMock: vi.fn(),
-}));
+const { completeSimpleMock } = vi.hoisted(() => ({ completeSimpleMock: vi.fn() }));
 
 vi.mock("@earendil-works/pi-ai", async (importOriginal) => {
 	const actual = await importOriginal<typeof PiAi>();
-	return {
-		...actual,
-		completeSimple: completeSimpleMock,
-	};
+	return { ...actual, completeSimple: completeSimpleMock };
 });
 
 let tempDir: string | undefined;
 
-beforeEach(() => {
-	completeSimpleMock.mockReset();
-});
+beforeEach(() => completeSimpleMock.mockReset());
 
 afterEach(() => {
 	if (tempDir) {
@@ -87,12 +82,14 @@ const skillContract = {
 };
 
 function proposal(summary: string, edits: RefinementProposal["edits"]): RefinementProposal {
-	return {
-		summary,
-		rationale: `${summary} rationale`,
-		expectedOutcome: `${summary} outcome`,
-		edits,
-	};
+	return { summary, rationale: `${summary} rationale`, expectedOutcome: `${summary} outcome`, edits };
+}
+
+const json = (edits: unknown) => JSON.stringify({ summary: "s", rationale: "r", expectedOutcome: "o", edits });
+const entryWith = (p: object): HarnessEntry => p as HarnessEntry;
+
+function noticeResult(appliedEdits: RefinementResult["appliedEdits"]): RefinementResult {
+	return { id: "r", summary: "Recorded", rationale: "r", expectedOutcome: "o", harnessStatePath: "p", appliedEdits };
 }
 
 function createRefineModel(reasoning: boolean): Model<"openai-completions"> {
@@ -150,6 +147,24 @@ function seedEntry(state: HarnessState, kind: RefinementKind, id = `${kind}_entr
 }
 
 describe("harness refinement", () => {
+	it("renders applied refinement notices as completed work, never as a directive", () => {
+		const body = formatRefinementNoticeBody(
+			noticeResult([
+				{ action: "create", kind: "memory", id: "m", applied: true },
+				{ action: "update", kind: "memory", id: "g", applied: true, after: entryWith({ scope: "global" }) },
+				{ action: "delete", kind: "memory", id: "d", applied: true },
+				{ action: "create", kind: "memory", id: "x", applied: false },
+				{ action: "create", kind: "memory", id: "m2", applied: true, after: entryWith({ content: 1 }) },
+			]),
+		);
+		expect(body.split("\n")[0]).toBe(REFINEMENT_NOTICE_MARKER);
+		expect(body).toContain("- created memory [local:m] m:");
+		expect(body).toContain("- updated memory [global:g] g:");
+		expect(body).toContain("- deleted memory [local:d] d:");
+		expect(body).toContain("(skipped malformed entry: content not a string)");
+		expect(body).not.toContain(":x]");
+	});
+
 	it("rejects an edit when the target entry changed after planning", () => {
 		const harnessStateDir = makeTempDir();
 		const baselineState = loadHarnessState(harnessStateDir);
@@ -595,9 +610,7 @@ describe("harness refinement", () => {
 			title: "Native validation",
 			content: "Run validation through the target project environment.",
 		};
-		completeSimpleMock.mockResolvedValueOnce(
-			assistantText(JSON.stringify({ summary: "s", rationale: "r", expectedOutcome: "o", edits: [edit] })),
-		);
+		completeSimpleMock.mockResolvedValueOnce(assistantText(json([edit])));
 
 		const result = await refineHarness(
 			[{ role: "user", content: "Use native validation.", timestamp: Date.now() } satisfies AgentMessage],
@@ -624,9 +637,7 @@ describe("harness refinement", () => {
 
 	it("caps the refinement output budget by the policy ceiling for wide models", async () => {
 		const state = loadHarnessState(makeTempDir());
-		completeSimpleMock.mockResolvedValueOnce(
-			assistantText(JSON.stringify({ summary: "s", rationale: "r", expectedOutcome: "o", edits: [] })),
-		);
+		completeSimpleMock.mockResolvedValueOnce(assistantText(json([])));
 
 		await refineHarness([], state, [], { ...createRefineModel(false), maxTokens: 128_000 }, "api-key", {});
 
@@ -906,9 +917,7 @@ describe("global refinement history", () => {
 			title: "Planned memory",
 			content: "Created only when applied.",
 		};
-		completeSimpleMock.mockResolvedValueOnce(
-			assistantText(JSON.stringify({ summary: "s", rationale: "r", expectedOutcome: "o", edits: [edit] })),
-		);
+		completeSimpleMock.mockResolvedValueOnce(assistantText(json([edit])));
 
 		const plan = await planRefinement(
 			[{ role: "user", content: "remember this", timestamp: Date.now() } satisfies AgentMessage],
