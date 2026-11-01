@@ -444,35 +444,45 @@ function validateEntryShape(
 	}
 }
 
+const REFINEMENT_SIGNATURE =
+	"record_refinement(trigger: string, changes: string | string[], options?: { evidence?: string; outcome?: string; id?: string | null; global?: boolean; global_?: boolean })";
+
 function validateRefinementEvent(
 	trigger: unknown,
 	changes: unknown,
 	opts: { evidence: unknown; outcome: unknown },
 ): void {
 	if (typeof trigger !== "string" || !trigger) {
-		throw new Error(`refinement event rejected: trigger must be a non-empty string, got ${typeName(trigger)}`);
+		throw new Error(`refinement event rejected: trigger must be a non-empty string, got ${typeName(trigger)}. Signature: ${REFINEMENT_SIGNATURE}`);
 	}
 	if (typeof changes === "string") {
 		if (!changes) {
-			throw new Error("refinement event rejected: changes must be a non-empty string or a list of strings");
+			throw new Error(`refinement event rejected: changes must be a non-empty string or a list of strings. Signature: ${REFINEMENT_SIGNATURE}`);
 		}
 	} else if (Array.isArray(changes)) {
 		if (!changes.every((c) => typeof c === "string" && c.length > 0)) {
-			throw new Error("refinement event rejected: changes must be a list of non-empty strings");
+			throw new Error(`refinement event rejected: changes must be a list of non-empty strings. Signature: ${REFINEMENT_SIGNATURE}`);
 		}
+	} else if (
+		isPlainRecord(changes) &&
+		["outcome", "evidence", "id", "global", "global_"].some((k) => k in changes)
+	) {
+		throw new Error(
+			`refinement event rejected: the options object was passed as the second argument (changes). Signature: ${REFINEMENT_SIGNATURE}`,
+		);
 	} else {
 		throw new Error(
-			`refinement event rejected: changes must be a string or a list of strings, got ${typeName(changes)}`,
+			`refinement event rejected: changes must be a string or a list of strings, got ${typeName(changes)}. Signature: ${REFINEMENT_SIGNATURE}`,
 		);
 	}
 	if (typeof opts.evidence !== "string") {
 		throw new Error(
-			`refinement event rejected: evidence must be a string when provided, got ${typeName(opts.evidence)}`,
+			`refinement event rejected: evidence must be a string when provided, got ${typeName(opts.evidence)}. Signature: ${REFINEMENT_SIGNATURE}`,
 		);
 	}
 	if (typeof opts.outcome !== "string") {
 		throw new Error(
-			`refinement event rejected: outcome must be a string when provided, got ${typeName(opts.outcome)}`,
+			`refinement event rejected: outcome must be a string when provided, got ${typeName(opts.outcome)}. Signature: ${REFINEMENT_SIGNATURE}`,
 		);
 	}
 }
@@ -1335,8 +1345,15 @@ export class HarnessState {
 		if (typeof query !== "string") {
 			throw new TypeError(`query must be str, got ${typeof query}`);
 		}
+		if (kind !== null && kind !== undefined && !KINDS.includes(kind)) {
+			throw new TypeError(
+				`kind must be one of ${JSON.stringify(KINDS)} or omitted, got ${typeName(kind)}; signature: search(query: string, kind?: "prompt" | "memory" | "skill" | "subagent" | null, limit?: number, options?: { global?: boolean; global_?: boolean })`,
+			);
+		}
 		if (typeof limit !== "number" || !Number.isSafeInteger(limit) || limit < 1) {
-			throw new TypeError("limit must be a positive int");
+			throw new TypeError(
+				"limit must be a positive int; signature: search(query: string, kind?: \"prompt\" | \"memory\" | \"skill\" | \"subagent\" | null, limit?: number, options?: { global?: boolean; global_?: boolean })",
+			);
 		}
 		const terms = harnessQueryTerms(query);
 		if (terms.length === 0) return [];

@@ -97,6 +97,15 @@ test("HarnessState records and queries refinement events", () => {
 		const matches = state.search("test");
 		assert.equal(matches.length, 1);
 		assert.equal(matches[0].title, "Testing Memory");
+
+		assert.throws(
+			() => state.record_refinement("t", { outcome: "x" } as never),
+			/options object was passed as the second argument.*Signature: record_refinement/s,
+		);
+		assert.throws(
+			() => state.search("test", { limit: 3 } as never),
+			/kind must be one of.*signature: search/s,
+		);
 	} finally {
 		fs.rmSync(tempDir, { recursive: true, force: true });
 	}

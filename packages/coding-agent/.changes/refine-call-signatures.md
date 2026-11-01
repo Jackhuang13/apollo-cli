@@ -1,0 +1,1 @@
+- Improved harness `record_refinement`/`search` error messages and the call-contract prompt to show expected signatures, so malformed calls are self-explanatory without reading source.
